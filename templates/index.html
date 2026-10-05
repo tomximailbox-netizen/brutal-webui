@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brutal 流量控制管理面板</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="static/style.css">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-indigo-500 selection:text-white">
+
+  <!-- 顶部导航栏 -->
+  <header class="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-white font-black text-lg">
+          ⚡
+        </div>
+        <div>
+          <h1 class="text-base font-bold text-white tracking-tight flex items-center gap-2">
+            <span data-i18n="app_title">Brutal 流量控制面板</span>
+            <span id="mode-badge" class="px-2 py-0.5 text-xs font-normal rounded-full bg-slate-800 text-slate-400" data-i18n="status_detecting">检测中...</span>
+          </h1>
+          <p class="text-xs text-slate-400" data-i18n="app_subtitle">Linux TCP 拥塞控制 / brutalctl IP 规则实时管理器</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 sm:gap-3">
+        <!-- 语言切换选择器 (自动从 i18n.js 注册表渲染选项) -->
+        <div class="relative">
+          <select id="lang-select" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-slate-900 border border-slate-700 text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-sm">
+            <!-- 动态填充 -->
+          </select>
+        </div>
+
+        <span id="sync-sched-badge" class="hidden sm:inline-block text-xs px-2 py-1 rounded bg-slate-800 text-slate-400 border border-slate-700">
+          定时同步: -
+        </span>
+
+        <button id="btn-sync-trigger" onclick="handleTriggerSync()" class="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition flex items-center gap-1.5 shadow-md shadow-indigo-600/20">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          <span data-i18n="btn_sync_now">立即同步</span>
+        </button>
+
+        <button onclick="handleLogout()" class="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition" data-i18n-title="tooltip_logout" title="安全退出">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主体内容 -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- 概览指标卡片 -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="glass-panel p-4 rounded-2xl">
+        <div class="text-xs text-slate-400 font-medium" data-i18n="metric_rules_title">当前受控 IP 数量</div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="metric-rules-count" class="text-2xl font-black text-white font-mono">0</span>
+          <span class="text-xs text-slate-500" data-i18n="metric_rules_unit">条规则</span>
+        </div>
+      </div>
+
+      <div class="glass-panel p-4 rounded-2xl">
+        <div class="text-xs text-slate-400 font-medium" data-i18n="metric_domains_title">托管解析域名</div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="metric-domains-count" class="text-2xl font-black text-indigo-400 font-mono">0</span>
+          <span class="text-xs text-slate-500" data-i18n="metric_domains_unit">个目标</span>
+        </div>
+      </div>
+
+      <div class="glass-panel p-4 rounded-2xl">
+        <div class="text-xs text-slate-400 font-medium" data-i18n="metric_sent_title">累计发包数据量</div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="metric-sent-mb" class="text-2xl font-black text-emerald-400 font-mono">0 MB</span>
+        </div>
+      </div>
+
+      <div class="glass-panel p-4 rounded-2xl">
+        <div class="text-xs text-slate-400 font-medium" data-i18n="metric_sync_title">最近同步状态</div>
+        <div class="mt-2 flex flex-col">
+          <span id="metric-sync-status" class="text-sm font-semibold text-slate-200" data-i18n="sync_never">从未运行</span>
+          <span id="metric-sync-time" class="text-xs text-slate-500 mt-0.5">-</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 选项卡切换头 -->
+    <div class="flex items-center gap-1 border-b border-slate-800">
+      <button id="btn-tab-rules" onclick="switchTab('rules')" class="tab-btn px-4 py-2.5 text-sm font-medium border-b-2 transition flex items-center gap-2 border-indigo-500 text-indigo-400 bg-slate-800/60 rounded-t-lg">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        <span data-i18n="tab_rules">规则列表</span>
+      </button>
+
+      <button id="btn-tab-domains" onclick="switchTab('domains')" class="tab-btn px-4 py-2.5 text-sm font-medium border-b-2 transition flex items-center gap-2 border-transparent text-slate-400 rounded-t-lg hover:text-slate-200">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+        <span data-i18n="tab_domains">域名清单配置</span>
+      </button>
+
+      <button id="btn-tab-static-ips" onclick="switchTab('static-ips')" class="tab-btn px-4 py-2.5 text-sm font-medium border-b-2 transition flex items-center gap-2 border-transparent text-slate-400 rounded-t-lg hover:text-slate-200">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+        <span data-i18n="tab_static_ips">静态IP清单配置</span>
+      </button>
+
+      <button id="btn-tab-logs" onclick="switchTab('logs')" class="tab-btn px-4 py-2.5 text-sm font-medium border-b-2 transition flex items-center gap-2 border-transparent text-slate-400 rounded-t-lg hover:text-slate-200">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        <span data-i18n="tab_logs">同步控制台</span>
+      </button>
+
+      <button id="btn-tab-settings" onclick="switchTab('settings')" class="tab-btn px-4 py-2.5 text-sm font-medium border-b-2 transition flex items-center gap-2 border-transparent text-slate-400 rounded-t-lg hover:text-slate-200">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        <span data-i18n="tab_settings">系统设置</span>
+      </button>
+    </div>
+
+    <!-- Tab 1: 规则列表 -->
+    <div id="tab-rules" class="tab-content space-y-4">
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div class="relative flex-1 max-w-md">
+          <input id="rule-search-input" type="text" placeholder="按 IP / CIDR 搜索过滤..." data-i18n-placeholder="search_placeholder" class="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white placeholder-slate-500">
+          <svg class="w-4 h-4 absolute left-3 top-2.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button id="btn-save-all-manual" onclick="handleSaveAllManualIps()" class="hidden px-3 py-2 rounded-xl text-xs font-semibold bg-amber-600/80 hover:bg-amber-500 text-white transition flex items-center gap-1.5 border border-amber-500/40 shadow-lg shadow-amber-600/20" title="将所有当前临时手动 IP 固化保存到 brut_ip.txt 清单中，使其永久生效">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
+            <span data-i18n="btn_save_all_manual">一键保存临时IP到清单</span> (<span id="manual-ips-badge">0</span>)
+          </button>
+          <button onclick="loadRules()" class="px-3 py-2 rounded-xl text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 transition flex items-center gap-1.5 border border-slate-700">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <span data-i18n="btn_refresh">刷新列表</span>
+          </button>
+          <button onclick="showAddRuleModal(true)" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition flex items-center gap-1.5 shadow-lg shadow-emerald-600/20">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            <span data-i18n="btn_add_rule">添加 IP 规则</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 表格 -->
+      <div class="glass-panel rounded-2xl overflow-hidden border border-slate-800">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-slate-800 bg-slate-900/40 text-xs font-semibold text-slate-400">
+                <th class="py-3 px-4" data-i18n="th_destination">DESTINATION (目标)</th>
+                <th class="py-3 px-4" data-i18n="th_rate">RATE (速率)</th>
+                <th class="py-3 px-4" data-i18n="th_gain">GAIN</th>
+                <th class="py-3 px-4" data-i18n="th_status">STATUS</th>
+                <th class="py-3 px-4" data-i18n="th_members">MEMBERS</th>
+                <th class="py-3 px-4" data-i18n="th_sent">SENT (流量)</th>
+                <th class="py-3 px-4 text-right" data-i18n="th_actions">操作</th>
+              </tr>
+            </thead>
+            <tbody id="rules-table-body" class="divide-y divide-slate-800/40">
+              <!-- 动态填充 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2: 域名清单配置 -->
+    <div id="tab-domains" class="tab-content hidden space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- 域名编辑区域 -->
+        <div class="lg:col-span-2 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-bold text-white" data-i18n="domains_editor_title">brut_domain.txt 文件编辑</h3>
+              <p class="text-xs text-slate-400" data-i18n="domains_editor_desc">每行一个域名，支持以 # 开头的注释行与自定义速度 (如 domain.com 200)</p>
+            </div>
+            <span id="domains-effective-count" class="text-xs text-indigo-400 font-mono">当前有效域名: 0 个</span>
+          </div>
+
+          <textarea id="domains-editor" rows="16" class="w-full p-4 rounded-2xl bg-slate-900 border border-slate-800 font-mono text-sm text-slate-200 focus:outline-none focus:border-indigo-500 leading-relaxed resize-y" data-i18n-placeholder="domains_placeholder" placeholder="google.com&#10;cloudflare.com 200&#10;github.com 50&#10;# 每行一个，支持在域名后空格指定速率 (未指定默认 100Mbps)"></textarea>
+
+          <div class="flex items-center gap-3">
+            <button onclick="handleSaveDomains(false)" class="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-md shadow-indigo-600/20" data-i18n="btn_save_only">
+              仅保存修改
+            </button>
+            <button onclick="handleSaveDomains(true)" class="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-md shadow-emerald-600/20" data-i18n="btn_save_and_sync">
+              保存并立即同步到 brutalctl
+            </button>
+          </div>
+        </div>
+
+        <!-- 侧边单域名测试工具 -->
+        <div class="space-y-4">
+          <div class="glass-panel p-5 rounded-2xl space-y-3">
+            <h4 class="text-sm font-bold text-white flex items-center gap-2">
+              <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+              <span data-i18n="dns_test_title">单域名 DNS 解析测试</span>
+            </h4>
+            <p class="text-xs text-slate-400" data-i18n="dns_test_desc">测试服务器能否通过 DNS 解析该域名的 IPv4 与 IPv6</p>
+
+            <div class="flex gap-2">
+              <input id="test-domain-input" type="text" placeholder="例如: google.com" data-i18n-placeholder="dns_test_placeholder" class="flex-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs focus:outline-none focus:border-indigo-500 text-white">
+              <button onclick="handleTestResolve()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition border border-slate-700" data-i18n="btn_test">
+                测试
+              </button>
+            </div>
+            <div id="test-resolve-result" class="min-h-[40px] pt-1"></div>
+          </div>
+
+          <div class="glass-panel p-5 rounded-2xl space-y-2 text-xs text-slate-400 leading-relaxed">
+            <div class="font-bold text-slate-300" data-i18n="sync_logic_title">💡 同步逻辑说明：</div>
+            <p data-i18n="sync_logic_1">1. 系统自动解析文件中所有域名的 IPv4 与 IPv6 地址。</p>
+            <p data-i18n="sync_logic_2">2. 解析出的新 IP 自动执行限速：IPv4 默认 /32，IPv6 默认 /128。</p>
+            <p data-i18n="sync_logic_3">3. 已不在域名解析结果中的旧 IP 会自动执行 del 清理（手动临时 IP 自动保护不被删除）。</p>
+            <p data-i18n="sync_logic_4">4. 若 DNS 全部解析失败，为防止误删将自动放弃执行。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: 静态 IP 清单配置 -->
+    <div id="tab-static-ips" class="tab-content hidden space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- 静态 IP 编辑区域 -->
+        <div class="lg:col-span-2 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-bold text-white" data-i18n="static_editor_title">brut_ip.txt 静态 IP 清单编辑</h3>
+              <p class="text-xs text-slate-400" data-i18n="static_editor_desc">每行一个 IPv4 或 IPv6 地址/网段，支持以 # 开头的注释行与自定义速度 (如 1.2.3.4 200)</p>
+            </div>
+            <div id="static-ips-count-badge" class="text-xs text-indigo-400 font-mono">有效 IP: 0 (IPv4: 0, IPv6: 0)</div>
+          </div>
+
+          <textarea id="static-ips-editor" rows="16" class="w-full p-4 rounded-2xl bg-slate-900 border border-slate-800 font-mono text-sm text-slate-200 focus:outline-none focus:border-indigo-500 leading-relaxed resize-y" data-i18n-placeholder="static_placeholder" placeholder="# 静态 IP 清单示例 (支持自定义速率，未指定默认 100Mbps)&#10;1.2.3.4 200&#10;10.0.0.0/24 50&#10;2001:db8::1 500&#10;2408:8207::/64"></textarea>
+
+          <div class="flex items-center gap-3">
+            <button onclick="handleSaveStaticIps(false)" class="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-md shadow-indigo-600/20" data-i18n="btn_save_only">
+              仅保存修改
+            </button>
+            <button onclick="handleSaveStaticIps(true)" class="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-md shadow-emerald-600/20" data-i18n="btn_save_and_sync">
+              保存并立即应用到 brutalctl
+            </button>
+          </div>
+        </div>
+
+        <!-- 侧边单 IP 快速校验工具 -->
+        <div class="space-y-4">
+          <div class="glass-panel p-5 rounded-2xl space-y-3">
+            <h4 class="text-sm font-bold text-white flex items-center gap-2">
+              <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              <span data-i18n="static_test_title">IP/CIDR 格式快速校验</span>
+            </h4>
+            <p class="text-xs text-slate-400" data-i18n="static_test_desc">检测输入的 IP 语法是否有效及自动补齐的掩码</p>
+
+            <div class="flex gap-2">
+              <input id="test-ip-input" type="text" placeholder="例如: 1.2.3.4 或 2001:db8::1" data-i18n-placeholder="static_test_placeholder" class="flex-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs focus:outline-none focus:border-indigo-500 text-white font-mono">
+              <button onclick="handleTestIpFormat()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition border border-slate-700" data-i18n="btn_validate">
+                检测
+              </button>
+            </div>
+            <div id="test-ip-result" class="min-h-[40px] pt-1"></div>
+          </div>
+
+          <div class="glass-panel p-5 rounded-2xl space-y-2 text-xs text-slate-400 leading-relaxed">
+            <div class="font-bold text-slate-300" data-i18n="static_logic_title">💡 静态 IP 清单说明：</div>
+            <p data-i18n="static_logic_1">1. 本清单存储于 brut_ip.txt 文件中，服务器重启后永久持久化保留。</p>
+            <p data-i18n="static_logic_2">2. 支持 IPv4（未加掩码默认 /32）与 IPv6（未加掩码默认 /128），支持自定义掩码如 /24 或 /64。</p>
+            <p data-i18n="static_logic_3">3. 此文件中的所有规则自动纳入免清理白名单，在后台定时同步刷新时绝不被误删。</p>
+            <p data-i18n="static_logic_4">4. 页面查看的临时手动 IP 支持一键转存到此清单中。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 4: 同步控制台 -->
+    <div id="tab-logs" class="tab-content hidden space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-sm font-bold text-white flex items-center gap-2">
+            <span>终端实时输出</span>
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          </h3>
+          <p class="text-xs text-slate-400">展示 brutal_sync.sh 运行过程与 DNS 解析/规则添加日志</p>
+        </div>
+
+        <button onclick="loadLogs()" class="px-3 py-1.5 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+          刷新输出
+        </button>
+      </div>
+
+      <div class="rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
+        <div class="bg-slate-900 px-4 py-2 border-b border-slate-800 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-rose-500/80 inline-block"></span>
+            <span class="w-3 h-3 rounded-full bg-amber-500/80 inline-block"></span>
+            <span class="w-3 h-3 rounded-full bg-emerald-500/80 inline-block"></span>
+            <span class="text-xs font-mono text-slate-400 ml-2">stdout / sync_stream</span>
+          </div>
+        </div>
+        <div id="terminal-output" class="terminal-scroll p-4 h-96 overflow-y-auto text-xs leading-relaxed">
+          <!-- 终端日志 -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 5: 系统设置 -->
+    <div id="tab-settings" class="tab-content hidden space-y-6 max-w-2xl">
+      <div class="glass-panel p-6 rounded-2xl space-y-5">
+        <h3 class="text-sm font-bold text-white border-b border-slate-800 pb-3" data-i18n="settings_security_title">安全与访问凭据</h3>
+        <div class="space-y-3">
+          <label class="block text-xs font-medium text-slate-400" data-i18n="settings_pwd_label">修改管理员登录密码</label>
+          <input id="setting-new-password" type="password" placeholder="输入新的管理密码 (留空则不修改)" data-i18n-placeholder="settings_pwd_placeholder" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white">
+          <p class="text-xs text-slate-500" data-i18n="settings_pwd_desc">修改后下次登录时生效</p>
+        </div>
+      </div>
+
+      <div class="glass-panel p-6 rounded-2xl space-y-5">
+        <h3 class="text-sm font-bold text-white border-b border-slate-800 pb-3" data-i18n="settings_sched_title">自动同步定时调度</h3>
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-medium text-slate-200" data-i18n="settings_sched_toggle">启用后台定时自动同步</div>
+              <div class="text-xs text-slate-500" data-i18n="settings_sched_desc">按固定周期自动在后台运行 DNS 探测与规则更新</div>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="setting-scheduler-enabled" class="sr-only peer" checked>
+              <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+            </label>
+          </div>
+
+          <div class="space-y-2">
+            <label class="block text-xs font-medium text-slate-400" data-i18n="settings_interval_label">同步执行周期 (秒)</label>
+            <input id="setting-interval" type="number" min="30" step="30" value="300" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono">
+            <p class="text-xs text-slate-500" data-i18n="settings_interval_desc">建议设置为 300 秒 (5分钟) 或更高，避免过度频繁请求 DNS 解析</p>
+          </div>
+
+          <div class="space-y-2">
+            <label class="block text-xs font-medium text-slate-400" data-i18n="settings_startup_label">服务启动/重启后首次同步延迟 (秒)</label>
+            <input id="setting-startup-delay" type="number" min="1" step="1" value="5" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono">
+            <p class="text-xs text-slate-500" data-i18n="settings_startup_desc">服务器启动或服务重启后延迟此秒数立即执行首次同步，迅速拉取域名生效规则</p>
+          </div>
+        </div>
+      </div>
+
+      <button onclick="handleSaveSettings()" class="px-5 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-lg shadow-indigo-600/20" data-i18n="btn_save_settings">
+        保存全部设置
+      </button>
+    </div>
+
+  </main>
+
+  <!-- 添加规则弹窗 Modal -->
+  <div id="add-rule-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
+    <div class="glass-panel p-6 rounded-2xl w-full max-w-md border border-slate-700 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-bold text-white" data-i18n="modal_add_title">添加 brutalctl 限速规则</h3>
+        <button onclick="showAddRuleModal(false)" class="text-slate-400 hover:text-white">&times;</button>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-medium text-slate-400" data-i18n="modal_add_ip_label">目标 IP / CIDR</label>
+            <button type="button" onclick="fillClientIp()" class="text-[11px] text-indigo-400 hover:text-indigo-300 transition flex items-center gap-1 cursor-pointer" title="点击填入当前客户端 IP">
+              <span data-i18n="modal_add_client_label">客户端 IP:</span>
+              <span id="client-ip-display" class="font-mono font-semibold underline underline-offset-2" data-i18n="modal_add_client_detecting">检测中...</span>
+            </button>
+          </div>
+          <input id="add-rule-ip" type="text" placeholder="例如: 1.2.3.4 或 2001:db8::1 (支持 /64)" data-i18n-placeholder="modal_add_ip_placeholder" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono">
+          <p class="text-[11px] text-slate-500 mt-1" data-i18n="modal_add_ip_desc">默认已自动带入客户端 IP。若未填掩码：IPv4 默认补齐 /32，IPv6 默认补齐 /128</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1" data-i18n="modal_add_rate_label">限速速率 (Mbps)</label>
+          <input id="add-rule-rate" type="number" min="1" value="100" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono">
+
+          <div class="flex gap-1.5 mt-2">
+            <button onclick="setPresetRate(50)" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">50M</button>
+            <button onclick="setPresetRate(100)" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">100M</button>
+            <button onclick="setPresetRate(200)" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">200M</button>
+            <button onclick="setPresetRate(500)" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">500M</button>
+            <button onclick="setPresetRate(1000)" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">1000M</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="showAddRuleModal(false)" class="px-4 py-2 rounded-xl text-xs bg-slate-800 hover:bg-slate-700 text-slate-300" data-i18n="btn_cancel">取消</button>
+        <button onclick="handleAddRule()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20" data-i18n="btn_confirm_add">确认添加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast 消息容器 -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+
+  <script src="static/i18n.js"></script>
+  <script src="static/app.js"></script>
+</body>
+</html>

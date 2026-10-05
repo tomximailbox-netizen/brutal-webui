@@ -1,0 +1,27 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "auth": {
+    "admin_password": "ChangeThisPassword123!",
+    "session_timeout_hours": 24
+  },
+  "brutal": {
+    "brutalctl_bin": "brutalctl",
+    "default_rate_mbps": 100,
+    "domain_file_path": "./brut_domain.txt",
+    "ip_file_path": "./brut_ip.txt",
+    "sync_script_path": "./brutal_sync.sh"
+  },
+  "sync_scheduler": {
+    "enabled": true,
+    "interval_seconds": 300,
+    "startup_sync_delay": 5
+  },
+  "ssl": {
+    "enabled": false,
+    "cert_file": "./cert.pem",
+    "key_file": "./key.pem"
+  }
+}

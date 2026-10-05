@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brutal Control Panel - Login</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              500: '#6366f1',
+              600: '#4f46e5',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="static/style.css">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-center items-center p-4 selection:bg-indigo-500 selection:text-white font-sans antialiased relative">
+
+  <!-- 右上角语言选择器 -->
+  <div class="absolute top-5 right-5 z-20 flex items-center gap-2">
+    <select id="lang-select" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-slate-900 border border-slate-700 text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-sm">
+      <!-- 动态注入语言选项 -->
+    </select>
+  </div>
+
+  <!-- 独立登录卡片 -->
+  <div class="glass-panel p-8 sm:p-10 rounded-3xl w-full max-w-sm border border-slate-800 shadow-2xl space-y-6 text-center animate-in fade-in zoom-in-95 duration-200">
+    <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center mx-auto shadow-lg shadow-indigo-500/25 text-white font-black text-2xl">
+      ⚡
+    </div>
+
+    <div>
+      <h1 class="text-xl font-bold text-white tracking-tight" data-i18n="modal_login_title">管理员身份验证</h1>
+      <p class="text-xs text-slate-400 mt-1.5 leading-relaxed" data-i18n="modal_login_desc">请输入配置的管理密码以解锁控制面板</p>
+    </div>
+
+    <form onsubmit="handleLoginSubmit(event)" class="space-y-4 text-left">
+      <div>
+        <input id="login-password" type="password" placeholder="输入管理密码..." data-i18n-placeholder="modal_login_placeholder" autofocus required class="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white transition placeholder-slate-500 shadow-inner">
+      </div>
+
+      <button id="btn-submit" type="submit" class="w-full py-3 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white transition shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2">
+        <span data-i18n="btn_unlock">确认解锁</span>
+      </button>
+    </form>
+  </div>
+
+  <!-- Toast 消息容器 -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+
+  <!-- 国际化引擎 -->
+  <script src="static/i18n.js"></script>
+
+  <script>
+    // 解析当前基础路径 (支持反向代理如 /brutal/)
+    function resolveUrl(path) {
+      let base = window.location.pathname;
+      if (!base.endsWith('/')) {
+        base = base.substring(0, base.lastIndexOf('/') + 1);
+      }
+      const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+      return base + cleanPath;
+    }
+
+    function showToast(msg, type = "info") {
+      const container = document.getElementById("toast-container");
+      const el = document.createElement("div");
+      const colors = {
+        success: "bg-emerald-600 border-emerald-500",
+        error: "bg-rose-600 border-rose-500",
+        info: "bg-indigo-600 border-indigo-500"
+      };
+      el.className = `flex items-center px-4 py-3 rounded-xl border text-white text-sm shadow-xl transition-all transform duration-300 translate-y-2 opacity-0 ${colors[type] || colors.info}`;
+      el.innerHTML = `<span>${msg}</span>`;
+      container.appendChild(el);
+
+      requestAnimationFrame(() => {
+        el.classList.remove("translate-y-2", "opacity-0");
+      });
+
+      setTimeout(() => {
+        el.classList.add("translate-y-2", "opacity-0");
+        setTimeout(() => el.remove(), 300);
+      }, 3000);
+    }
+
+    async function handleLoginSubmit(e) {
+      e.preventDefault();
+      const pwdInput = document.getElementById("login-password");
+      const password = pwdInput.value.trim();
+      const btn = document.getElementById("btn-submit");
+
+      if (!password) {
+        showToast(typeof t === "function" ? t("toast_input_pwd") : "请输入密码", "error");
+        return;
+      }
+
+      btn.disabled = true;
+      try {
+        const res = await fetch(resolveUrl("/api/login"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password })
+        });
+        const data = await res.json();
+        if (res.ok && data.token) {
+          localStorage.setItem("brutal_token", data.token);
+          showToast(typeof t === "function" ? t("toast_login_success") : "登录成功", "success");
+          // 登录成功，直接刷新页面，服务端重新校验 Token 并正式下发管理控制台
+          setTimeout(() => {
+            window.location.reload();
+          }, 300);
+        } else {
+          showToast(data.error || (typeof t === "function" ? t("toast_login_error") : "密码错误"), "error");
+          btn.disabled = false;
+          pwdInput.focus();
+        }
+      } catch (err) {
+        showToast(typeof t === "function" ? t("toast_net_error") : "网络异常", "error");
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
