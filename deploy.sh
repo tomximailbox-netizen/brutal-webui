@@ -29,10 +29,12 @@ echo "检测到环境: $PY_VER"
 
 # 3. 部署或增量更新文件
 if [ -d "$INSTALL_DIR" ] && [ -f "$INSTALL_DIR/config.json" ]; then
-    echo "检测到已有安装，正在执行【无损热更新】（将保留现有密码、域名清单与静态IP清单）..."
+    echo "检测到已有安装，正在执行【无损热更新】（将保留现有密码、端口、域名清单与静态IP清单）..."
     cp "$INSTALL_DIR/config.json" /tmp/brutal_config.json.bak
     [ -f "$INSTALL_DIR/brut_domain.txt" ] && cp "$INSTALL_DIR/brut_domain.txt" /tmp/brutal_domain.txt.bak
     [ -f "$INSTALL_DIR/brut_ip.txt" ] && cp "$INSTALL_DIR/brut_ip.txt" /tmp/brutal_ip.txt.bak
+    [ -f "$INSTALL_DIR/cert.pem" ] && cp "$INSTALL_DIR/cert.pem" /tmp/brutal_cert.pem.bak
+    [ -f "$INSTALL_DIR/key.pem" ] && cp "$INSTALL_DIR/key.pem" /tmp/brutal_key.pem.bak
     HAS_EXISTING=1
 else
     echo "正在全新安装文件到: $INSTALL_DIR ..."
@@ -43,13 +45,15 @@ fi
 cp -r ./* "$INSTALL_DIR/"
 cd "$INSTALL_DIR"
 
-# 如果是更新，自动恢复原有的配置和域名文件，防止被本地测试文件覆盖
+# 如果是更新，自动恢复原有的配置、证书和清单文件，防止被仓库模板覆盖
 if [ "$HAS_EXISTING" -eq 1 ]; then
-    echo "已成功恢复您的原配置文件与清单数据..."
+    echo "已成功恢复您的原配置文件、SSL证书与清单数据..."
     cp /tmp/brutal_config.json.bak "$INSTALL_DIR/config.json"
     [ -f /tmp/brutal_domain.txt.bak ] && cp /tmp/brutal_domain.txt.bak "$INSTALL_DIR/brut_domain.txt"
     [ -f /tmp/brutal_ip.txt.bak ] && cp /tmp/brutal_ip.txt.bak "$INSTALL_DIR/brut_ip.txt"
-    rm -f /tmp/brutal_config.json.bak /tmp/brutal_domain.txt.bak /tmp/brutal_ip.txt.bak
+    [ -f /tmp/brutal_cert.pem.bak ] && cp /tmp/brutal_cert.pem.bak "$INSTALL_DIR/cert.pem"
+    [ -f /tmp/brutal_key.pem.bak ] && cp /tmp/brutal_key.pem.bak "$INSTALL_DIR/key.pem"
+    rm -f /tmp/brutal_config.json.bak /tmp/brutal_domain.txt.bak /tmp/brutal_ip.txt.bak /tmp/brutal_cert.pem.bak /tmp/brutal_key.pem.bak
 fi
 
 # 4. 给予脚本执行权限

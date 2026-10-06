@@ -51,12 +51,13 @@
 
 ```text
 .
+├── install.sh               # 远程一键安装 / 无损热更新引导入口
+├── deploy.sh                # 本地一键安装、平滑更新与 systemd 部署核心
 ├── app.py                   # WebUI 服务主程序（WSGI HTTP 服务与 API）
 ├── config.example.json      # 配置文件模板（包含端口、密码、SSL等配置）
 ├── brut_domain.txt          # 域名持久化清单（支持单行自定义速率）
 ├── brut_ip.txt              # 静态 IP 持久化清单（支持单行自定义速率与 CIDR）
 ├── brutal_sync.sh           # 原生 DNS 解析与 brutalctl 规则同步脚本
-├── deploy.sh                # Linux 一键安装、平滑更新与 systemd 部署脚本
 ├── brutal-web.service       # systemd 服务管理单元
 ├── nginx.conf.example       # Nginx HTTPS 反向代理与子路径配置范例
 ├── USER_MANUAL.md           # 详细使用手册（含网络代理、Xray Reality 等高级配置）
@@ -81,6 +82,20 @@
 
 ---
 
+## ⚡ 一行命令快速安装 / 无损热更新
+
+在 Linux 服务器（Ubuntu / Debian / CentOS / Rocky 等）上直接以 root 身份运行：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/tomximailbox-netizen/brutal-webui/main/install.sh)
+```
+
+> 💡 **特性说明**：
+> 1. **开箱即用**：零外部依赖，免配 Python 虚拟环境，自动配置 `systemd` 开机自启服务；
+> 2. **可重复执行（无损热更新）**：后续想要升级到最新版本时，**直接再次运行上述同一行命令即可**！脚本内置数据保护机制，**绝对不会覆盖**您现有的 `config.json`（密码与端口）、`brut_domain.txt`（域名清单）、`brut_ip.txt`（静态 IP 清单）以及自定义的 SSL 证书。
+
+---
+
 ## 🚀 快速启动与本地测试
 
 ### 本地直接运行
@@ -95,9 +110,9 @@ python app.py
 
 ---
 
-## 🐧 Linux 服务器一键部署与管理
+## 🐧 Linux 离线/手动部署与运维
 
-把整个文件夹复制到 Linux 服务器后，以 root 权限运行一键部署脚本：
+如果下载了源码包到服务器本地，亦可手动部署：
 
 ```bash
 chmod +x deploy.sh

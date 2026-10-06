@@ -60,32 +60,49 @@
 
 ## 3. 安装、更新与服务管理
 
-### 3.1 首次一键安装与部署
+### 3.1 极简远程一行命令安装（推荐）
 
-1. **上传文件**：将包含本项目的所有文件上传到服务器的任意临时目录（如 `/root/brutal/`）。
-2. **执行一键部署脚本**：
+在 Linux 服务器（Ubuntu / Debian / CentOS / Rocky 等）终端直接以 root 权限运行：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/tomximailbox-netizen/brutal-webui/main/install.sh)
+```
+
+脚本会自动完成：
+- 检查并自动安装缺失的系统基础依赖（`curl`、`tar`、`python3`）；
+- 从 GitHub 拉取最新源码归档；
+- 部署至标准目录 `/opt/brutal-webui/` 并赋予必要权限；
+- 自动生成高强度随机初始管理密码并显示在屏幕上；
+- 注册并启动 `brutal-web.service` 系统服务，并设置为开机自启。
+
+### 3.2 可重复执行的平滑无损热更新
+
+当后续发布新功能或修复补丁时，**您只需要再次执行同一条安装命令**：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/tomximailbox-netizen/brutal-webui/main/install.sh)
+```
+
+> **安全无损保护机制**：
+> 脚本检测到已有安装时会自动触发【无损热更新】流程，会自动备份并还原服务器上的：
+> - `config.json`（管理员登录密码、端口与网络设置保持不变）
+> - `brut_domain.txt`（原有域名清单 100% 保留）
+> - `brut_ip.txt`（原有静态 IP 清单 100% 保留）
+> - `cert.pem` / `key.pem`（若配置了 SSL 证书一并无损保留）
+> 并在几秒钟内平滑重启服务，绝不会丢失任何现有数据与配置。
+
+### 3.3 离线/手动上传部署方式
+
+若服务器无法直接连接外网 GitHub，也可手动上传代码部署：
+1. 将本项目所有文件上传到服务器的临时目录（如 `/root/brutal/`）；
+2. 执行部署脚本：
    ```bash
    cd /root/brutal
    chmod +x deploy.sh
    sudo ./deploy.sh
    ```
-3. **部署脚本会自动完成**：
-   - 检查 Python 3 环境；
-   - 自动安装文件至标准目录 `/opt/brutal-webui/`；
-   - 赋予必要脚本执行权限；
-   - 自动生成高强度随机初始管理密码并显示在控制台屏幕上；
-   - 注册并启动 `brutal-web.service` 系统服务，并设置为开机自启。
 
-### 3.2 平滑无损热更新
-
-当在本地开发机完成更新后，将最新文件上传覆盖到服务器的部署目录后，再次运行部署脚本即可：
-```bash
-cd /root/brutal
-sudo ./deploy.sh
-```
-> **安全防护提示**：更新脚本内置**无损数据保护**机制，会自动备份并还原服务器上的 `config.json`（密码与端口）、`brut_domain.txt`（域名清单）以及 `brut_ip.txt`（静态 IP 清单），**绝不会丢失或覆盖您的现有配置与正式数据**。
-
-### 3.3 系统服务运维指令
+### 3.4 系统服务运维指令
 
 服务通过 Linux 标准 `systemd` 守护进程管理：
 - **查看服务运行状态**：
