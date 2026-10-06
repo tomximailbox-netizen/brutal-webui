@@ -39,8 +39,9 @@
 6. **后台自动定时调度 & 开机自启快速同步**：
    - **服务启动延迟即时同步**：服务器启动或服务重启后，默认延迟 5 秒立即执行首次域名解析与规则同步，快速恢复控速规则。
    - 支持在 Web 设置界面开启/关闭后台定时调度，并可自由配置执行周期（如 300 秒/600 秒）与启动首次同步延迟时间。
-7. **安全凭据认证**：
-   - 内置管理员密码防护，生成高强度随机 Token 会话认证（Header 与 HttpOnly Cookie 双重支持），防暴力破解与时序攻击。
+7. **高安全凭据认证 & 服务端物理隔离安全防护**：
+   - **服务端物理隔离 (Server-Side Auth Guard)**：未授权访客访问根路径时，后端仅下发独立的极简登录页 (`login.html`)，绝对不包含任何后台 DOM 结构、管理表格或脚本，彻底杜绝 F12 审查元素泄露界面结构与数据；
+   - 内置管理员密码防护，登录成功发放高强度随机 Token 会话认证（Header 与 HttpOnly Cookie 双重支持），防暴力破解与时序攻击，注销自动彻底销毁 Cookie。
 8. **零外部 pip 依赖 & 本地 Mock 支持**：
    - 100% 纯 Python 3 标准库实现，无需在服务器上 `pip install` 任何第三方包。
    - 在未安装 `brutalctl` 或非 Linux 环境（如 Windows/macOS 开发机）下自动启用内置 Mock 虚拟引擎，开箱即用。
@@ -143,26 +144,36 @@ sudo ./deploy.sh
 
 ## ⚙️ 配置文件说明 (`config.json`)
 
+系统配置文件完整规范（首次部署时会根据 `config.example.json` 自动初始化并生成随机高强度密码）：
+
 ```json
 {
   "server": {
-    "host": "0.0.0.0",
-    "port": 8080
+    "host": "0.0.0.0",                 // 监听地址 (若配合 Nginx 反向代理建议改为 127.0.0.1)
+    "port": 8080                       // 监听端口 (默认 8080)
   },
   "auth": {
-    "admin_password": "你的强密码",
-    "session_timeout_hours": 24
+    "admin_password": "ChangeThisPassword123!", // 管理员登录密码
+    "session_timeout_hours": 24        // 会话 Token 有效期 (小时)
   },
   "brutal": {
-    "brutalctl_bin": "brutalctl",
-    "default_rate_mbps": 100,
-    "domain_file_path": "./brut_domain.txt",
-    "sync_script_path": "./brutal_sync.sh"
+    "brutalctl_bin": "brutalctl",      // 底层 brutalctl 可执行程序名称或绝对路径
+    "default_rate_mbps": 100,          // 默认限速速率 (Mbps)
+    "domain_file_path": "./brut_domain.txt", // 域名清单持久化文件路径
+    "ip_file_path": "./brut_ip.txt",   // 静态 IP 清单持久化文件路径 (支持 IPv4/IPv6 与自定义速率)
+    "sync_script_path": "./brutal_sync.sh"   // 原生同步核心脚本路径
   },
   "sync_scheduler": {
-    "enabled": true,
-    "interval_seconds": 300
+    "enabled": true,                   // 是否启用后台定时自动同步
+    "interval_seconds": 300,           // 周期自动同步时间间隔 (秒，建议 300 或 600)
+    "startup_sync_delay": 5            // 服务启动/重启后首次同步延迟 (秒)，开机快速自愈控速
+  },
+  "ssl": {
+    "enabled": false,                  // 是否启用 Python 原生 HTTPS
+    "cert_file": "./cert.pem",         // SSL 公钥证书文件路径
+    "key_file": "./key.pem"            // SSL 私钥文件路径
   }
 }
 ```
-可以在 Web 界面的“系统设置”选项卡中在线修改密码与自动同步周期。
+
+> 💡 **提示**：可以在 Web 界面的“系统设置”选项卡中在线修改管理密码、同步周期与开机同步延迟，修改后立即热生效。详细的高级配置（HTTPS / Nginx 反向代理 / Xray Reality 回落）请参阅 [USER_MANUAL.md](./USER_MANUAL.md)。

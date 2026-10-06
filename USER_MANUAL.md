@@ -6,9 +6,14 @@
 1. [系统概述与核心特性](#1-系统概述与核心特性)
 2. [环境准备与要求](#2-环境准备与要求)
 3. [安装、更新与服务管理](#3-安装更新与服务管理)
+   - [3.1 极简远程一行命令安装（推荐）](#31-极简远程一行命令安装推荐)
+   - [3.2 可重复执行的平滑无损热更新](#32-可重复执行的平滑无损热更新)
+   - [3.3 离线/手动上传部署方式](#33-离线手动上传部署方式)
+   - [3.4 系统服务运维指令](#34-系统服务运维指令)
+   - [3.5 一键彻底卸载（附带自动安全备份）](#35-一键彻底卸载附带自动安全备份)
 4. [网络与安全配置 (HTTPS / Nginx / Xray)](#4-网络与安全配置)
 5. [功能使用详解](#5-功能使用详解)
-   - [5.1 管理员登录](#51-管理员登录)
+   - [5.1 管理员登录与服务端物理隔离安全防护](#51-管理员登录与服务端物理隔离安全防护)
    - [5.2 规则列表与实时监控](#52-规则列表与实时监控)
    - [5.3 手动添加规则与客户端 IP 自动带入](#53-手动添加规则与客户端-ip-自动带入)
    - [5.4 临时 IP 一键固化到清单](#54-临时-ip-一键固化到清单)
@@ -352,34 +357,34 @@ fast.example.net 500           # 自定义：该域名解析出的所有 IPv4/IP
 
 ## 6. 配置文件说明 (`config.json`)
 
-配置文件位于 `/opt/brutal-webui/config.json`：
+配置文件位于 `/opt/brutal-webui/config.json`（首次安装时由 `deploy.sh` 根据模板自动创建并生成随机初始强密码）：
 
 ```json
 {
   "server": {
-    "host": "0.0.0.0",           // 监听地址 (Nginx 反代场景建议改为 127.0.0.1)
-    "port": 8080                 // 监听端口
+    "host": "0.0.0.0",                 // 监听地址 (Nginx 反代场景建议改为 127.0.0.1)
+    "port": 8080                       // 监听端口 (默认 8080)
   },
   "auth": {
-    "admin_password": "admin123",// 管理员登录密码
-    "session_timeout_hours": 24  // 会话 Token 有效期 (小时)
+    "admin_password": "ChangeThisPassword123!", // 管理员登录密码 (首次部署自动生成高强度随机密码)
+    "session_timeout_hours": 24        // 会话 Token 有效期 (小时)
   },
   "brutal": {
-    "brutalctl_bin": "brutalctl",// 底层 brutalctl 可执行程序名称/路径
-    "default_rate_mbps": 100,    // 默认限速速率 (Mbps)
-    "domain_file_path": "./brut_domain.txt", // 域名持久化清单路径
-    "ip_file_path": "./brut_ip.txt",         // 静态 IP 清单路径
-    "sync_script_path": "./brutal_sync.sh"   // 同步核心脚本路径
+    "brutalctl_bin": "brutalctl",      // 底层 brutalctl 可执行程序名称或绝对路径
+    "default_rate_mbps": 100,          // 全局默认限速速率 (Mbps)
+    "domain_file_path": "./brut_domain.txt", // 域名清单持久化文件路径 (支持自定义速率)
+    "ip_file_path": "./brut_ip.txt",   // 静态 IP 清单持久化文件路径 (支持 IPv4/IPv6 与自定义速率)
+    "sync_script_path": "./brutal_sync.sh"   // 原生同步核心脚本路径
   },
   "sync_scheduler": {
-    "enabled": true,             // 是否开启后台定时自动同步
-    "interval_seconds": 600,     // 周期同步时间间隔 (秒)
-    "startup_sync_delay": 5      // 服务启动/重启后首次同步延迟 (秒)
+    "enabled": true,                   // 是否开启后台定时自动同步
+    "interval_seconds": 300,           // 周期同步时间间隔 (秒，推荐 300 或 600)
+    "startup_sync_delay": 5            // 服务启动/重启后首次同步延迟 (秒)，开机快速恢复控速
   },
   "ssl": {
-    "enabled": false,            // 是否启用 Python 原生 HTTPS
-    "cert_file": "./cert.pem",   // 公钥证书路径
-    "key_file": "./key.pem"      // 私钥文件路径
+    "enabled": false,                  // 是否启用 Python 原生 HTTPS
+    "cert_file": "./cert.pem",         // SSL 公钥证书路径
+    "key_file": "./key.pem"            // SSL 私钥文件路径
   }
 }
 ```
