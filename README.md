@@ -2,6 +2,16 @@
 
 基于 Linux 内核拥塞控制与 `brutalctl` 命令行工具的现代化轻量级可视化流量控制管理系统。
 
+![Brutal 流量控制面板主界面](./docs/images/dashboard.png)
+
+---
+
+## 📸 界面预览
+
+| 独立登录页 (服务端物理隔离) | 管理控制面板 (实时监控与多语言) |
+| :---: | :---: |
+| ![管理员身份验证界面](./docs/images/login.png) | ![Brutal 流量控制面板](./docs/images/dashboard.png) |
+
 ---
 
 ## ✨ 核心特性
@@ -63,6 +73,8 @@
 ├── brutal-web.service       # systemd 服务管理单元
 ├── nginx.conf.example       # Nginx HTTPS 反向代理与子路径配置范例
 ├── USER_MANUAL.md           # 详细使用手册（含网络代理、Xray Reality 等高级配置）
+├── docs/
+│   └── images/              # 界面效果预览截图资源
 ├── test_app.py              # 核心逻辑单元测试
 ├── test_api_integration.py  # 端到端 API 集成测试
 ├── test_i18n.py             # 多语言国际化自动化测试
