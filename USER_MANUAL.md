@@ -122,6 +122,23 @@ bash <(curl -fsSL https://raw.githubusercontent.com/tomximailbox-netizen/brutal-
   journalctl -u brutal-web -f
   ```
 
+### 3.5 一键彻底卸载（附带自动安全备份）
+
+若不再需要使用本工具，可通过以下方式之一彻底清理：
+
+- **方式 A：远程一行命令卸载**
+  ```bash
+  bash <(curl -fsSL https://raw.githubusercontent.com/tomximailbox-netizen/brutal-webui/main/uninstall.sh)
+  ```
+- **方式 B：本地已安装目录下直接卸载**
+  ```bash
+  cd /opt/brutal-webui
+  sudo ./uninstall.sh
+  ```
+
+> 🛡️ **防后悔自动备份**：
+> 脚本在停止服务与清空目录之前，会自动将您服务器上的 `config.json`（密码与端口）、`brut_domain.txt`（域名清单）、`brut_ip.txt`（静态 IP 清单）及证书打包为 `/root/brutal_backup_YYYYMMDD_HHMMSS.tar.gz`，即使误卸载也可以随时找回您的宝贵数据。
+
 ---
 
 ## 4. 网络与安全配置

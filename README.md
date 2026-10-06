@@ -52,6 +52,7 @@
 ```text
 .
 ├── install.sh               # 远程一键安装 / 无损热更新引导入口
+├── uninstall.sh             # 一键彻底卸载脚本（自动备份现有数据）
 ├── deploy.sh                # 本地一键安装、平滑更新与 systemd 部署核心
 ├── app.py                   # WebUI 服务主程序（WSGI HTTP 服务与 API）
 ├── config.example.json      # 配置文件模板（包含端口、密码、SSL等配置）
@@ -93,6 +94,13 @@ bash <(curl -fsSL https://raw.githubusercontent.com/tomximailbox-netizen/brutal-
 > 💡 **特性说明**：
 > 1. **开箱即用**：零外部依赖，免配 Python 虚拟环境，自动配置 `systemd` 开机自启服务；
 > 2. **可重复执行（无损热更新）**：后续想要升级到最新版本时，**直接再次运行上述同一行命令即可**！脚本内置数据保护机制，**绝对不会覆盖**您现有的 `config.json`（密码与端口）、`brut_domain.txt`（域名清单）、`brut_ip.txt`（静态 IP 清单）以及自定义的 SSL 证书。
+
+### 🗑️ 一键彻底卸载（防后悔自动备份）
+若不再需要本工具，执行一行命令即可彻底移除：
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/tomximailbox-netizen/brutal-webui/main/uninstall.sh)
+```
+*(卸载脚本会在注销服务并清理安装目录前，自动将您现有的密码配置与 IP/域名清单打包备份至 `/root/brutal_backup_*.tar.gz`)*
 
 ---
 
