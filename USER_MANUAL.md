@@ -238,28 +238,81 @@ Python 内置的 `ssl` 模块支持开箱即用直接开启 HTTPS：
 
 ### 4.3 方案 C：Xray Reality 回落到 Nginx 并透传客户端真实 IP
 
-若架构为 `Xray Reality (443) -> 回落 Nginx -> 反代本地 WebUI`：
-1. **Xray 配置**：在 `fallbacks` 中为回落目标增加 `"xver": 1`；
-2. **Nginx 配置**：
-   ```nginx
-   server {
-       listen 80 proxy_protocol;  # 开启 PROXY Protocol
-       server_name your-domain.com;
+若架构为 `客户端 -> Xray Reality (443) -> 回落到本地 Nginx -> 反代本地 WebUI (8080)`：
 
-       set_real_ip_from 127.0.0.1;
-       set_real_ip_from unix:;
-       real_ip_header proxy_protocol;  # 还原真实公网客户端 IP
+为了让 WebUI 能够准确获取到真实的客户端公网 IP（而不是显示 `127.0.0.1` 或 `unix:`），需要开启 **PROXY Protocol v1** 透传：
 
-       location ^~ /brutal/ {
-           proxy_pass http://127.0.0.1:8080/;
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-           proxy_buffering off;
-       }
-   }
-   ```
-这样在添加规则时，系统就能准确识别到访客真实的公网客户端 IP，而不会显示 `unix:` 或 `127.0.0.1`。
+#### 1. Xray 服务端配置 (`config.json`)
+在入站配置的 `fallbacks` 及 `realitySettings` 中均增加 `"xver": 1`：
+
+```json
+{
+  "inbounds": [
+    {
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [ ... ],
+        "decryption": "none",
+        "fallbacks": [
+          {
+            "dest": 8001,          // 回落到 Nginx 监听的本地端口
+            "xver": 1             // 【关键】启用 PROXY Protocol v1 协议向回落目标透传真实客户端 IP
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "xver": 1,              // 【关键】在 realitySettings 中同样增加 "xver": 1
+          "dest": "www.apple.com:443", // Reality 伪装目标
+          "serverNames": ["www.apple.com"],
+          "privateKey": "...",
+          "shortIds": ["..."]
+        }
+      }
+    }
+  ]
+}
+```
+
+#### 2. Nginx 服务端配置 (`/etc/nginx/conf.d/brutal.conf`)
+Nginx 对应监听 `proxy_protocol` 并配置真实 IP 提取来源：
+
+```nginx
+server {
+    listen 127.0.0.1:8001 proxy_protocol;  # 接收来自 Xray 回落的 PROXY 协议流
+    server_name your-domain.com;
+
+    # 设置信任的代理来源为本地回环或 unix 套接字
+    set_real_ip_from 127.0.0.1;
+    set_real_ip_from unix:;
+    real_ip_header proxy_protocol;         # 从 PROXY 报头中提取真实客户端公网 IP
+
+    # 根路径访问示例
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }
+
+    # 或者使用二级子路径访问示例
+    location ^~ /brutal/ {
+        proxy_pass http://127.0.0.1:8080/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+按照上述配置后，当您在浏览器中打开 WebUI 并点击“添加 IP 规则”时，输入框中就能 100% 精确自动带入您当前的真实客户端公网 IP！
 
 ---
 
