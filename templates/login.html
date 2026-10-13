@@ -121,8 +121,29 @@
           }, 300);
         } else {
           showToast(data.error || (typeof t === "function" ? t("toast_login_error") : "密码错误"), "error");
-          btn.disabled = false;
-          pwdInput.focus();
+          if (data.locked && data.remaining_seconds) {
+            let leftSec = data.remaining_seconds;
+            btn.disabled = true;
+            btn.classList.add("opacity-60", "cursor-not-allowed");
+            const updateBtn = () => {
+              btn.textContent = `${typeof t === "function" ? t("login_locked") : "IP已被锁定"} (${leftSec}s)`;
+            };
+            updateBtn();
+            const timer = setInterval(() => {
+              leftSec--;
+              if (leftSec <= 0) {
+                clearInterval(timer);
+                btn.disabled = false;
+                btn.classList.remove("opacity-60", "cursor-not-allowed");
+                btn.textContent = typeof t === "function" ? t("btn_unlock") : "确认解锁";
+              } else {
+                updateBtn();
+              }
+            }, 1000);
+          } else {
+            btn.disabled = false;
+            pwdInput.focus();
+          }
         }
       } catch (err) {
         showToast(typeof t === "function" ? t("toast_net_error") : "网络异常", "error");

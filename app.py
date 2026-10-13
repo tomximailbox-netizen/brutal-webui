@@ -42,7 +42,10 @@ class BrutalWebApp:
         auth_conf = self.config.get("auth", {})
         self.auth = AuthManager(
             admin_password=auth_conf.get("admin_password", "admin123"),
-            token_expire_hours=auth_conf.get("session_timeout_hours", 24)
+            token_expire_hours=auth_conf.get("session_timeout_hours", 24),
+            max_failed_attempts=int(auth_conf.get("max_failed_attempts", 5)),
+            lockout_duration_seconds=int(auth_conf.get("lockout_duration_seconds", 900)),
+            failure_delay_seconds=float(auth_conf.get("failure_delay_seconds", 1.5))
         )
 
         brutal_conf = self.config.get("brutal", {})
@@ -326,15 +329,55 @@ class BrutalWebApp:
     # --- 具体 API 实现 ---
 
     def api_login(self, environ, start_response):
+        client_ip = self._extract_client_ip(environ)
+        # 1. 检查客户端 IP 是否处于锁定状态
+        is_locked, remaining_seconds = self.auth.is_ip_locked(client_ip)
+        if is_locked:
+            return self.json_response(
+                {
+                    "error": f"登录失败次数过多，该 IP 已被临时锁定，请在 {remaining_seconds} 秒后再试",
+                    "locked": True,
+                    "remaining_seconds": remaining_seconds
+                },
+                start_response,
+                status="429 Too Many Requests"
+            )
+
         body = self._parse_json_body(environ)
         password = body.get("password", "")
+
+        # 2. 密码验证成功
         if self.auth.verify_password(password):
+            self.auth.record_login_success(client_ip)
             token = self.auth.create_token()
             headers = [
                 ("Set-Cookie", f"session_token={token}; Path=/; HttpOnly; SameSite=Lax")
             ]
             return self.json_response({"status": "ok", "token": token, "msg": "登录成功"}, start_response, headers=headers)
-        return self.json_response({"error": "密码错误"}, start_response, status="403 Forbidden")
+
+        # 3. 密码错误：记录失败并施加延迟惩罚
+        count, is_now_locked = self.auth.record_login_failure(client_ip)
+        if is_now_locked:
+            _, remaining_seconds = self.auth.is_ip_locked(client_ip)
+            return self.json_response(
+                {
+                    "error": f"密码连续错误超过限制，该 IP 已被临时锁定 {remaining_seconds} 秒",
+                    "locked": True,
+                    "remaining_seconds": remaining_seconds
+                },
+                start_response,
+                status="429 Too Many Requests"
+            )
+
+        remaining_attempts = max(0, self.auth.max_failed_attempts - count)
+        return self.json_response(
+            {
+                "error": f"密码错误，还可尝试 {remaining_attempts} 次",
+                "remaining_attempts": remaining_attempts
+            },
+            start_response,
+            status="403 Forbidden"
+        )
 
     def api_status(self, environ, start_response):
         static_ips = set(self.ip_mgr.get_effective_ips())

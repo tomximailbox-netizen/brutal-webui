@@ -136,10 +136,12 @@ const I18N_RESOURCES = {
       modal_login_desc: "Please enter your admin password to unlock the dashboard",
       modal_login_placeholder: "Enter password...",
       btn_unlock: "Unlock Dashboard",
+      login_locked: "IP Locked",
 
       // 提示与通知 Toast
       toast_login_success: "Login successful",
       toast_login_error: "Incorrect password",
+      toast_login_locked: "Too many failed attempts. Your IP has been temporarily locked (%ss remaining)",
       toast_input_pwd: "Please enter admin password",
       toast_logout: "Signed out safely",
       toast_input_valid_ip: "Please enter a valid IP or CIDR",
@@ -274,9 +276,11 @@ const I18N_RESOURCES = {
       modal_login_desc: "请输入配置的管理密码以解锁控制面板",
       modal_login_placeholder: "输入管理密码...",
       btn_unlock: "确认解锁",
+      login_locked: "IP已被锁定",
 
       toast_login_success: "登录成功",
       toast_login_error: "密码错误",
+      toast_login_locked: "登录失败次数过多，该IP已被临时锁定（剩余 %s 秒）",
       toast_input_pwd: "请输入管理密码",
       toast_logout: "已安全退出",
       toast_input_valid_ip: "请输入有效的 IP 或 CIDR",
@@ -411,9 +415,11 @@ const I18N_RESOURCES = {
       modal_login_desc: "請輸入設定的管理密碼以解鎖控制面板",
       modal_login_placeholder: "輸入管理密碼...",
       btn_unlock: "確認解鎖",
+      login_locked: "IP已被鎖定",
 
       toast_login_success: "登入成功",
       toast_login_error: "密碼錯誤",
+      toast_login_locked: "登入失敗次數過多，該IP已被暫時鎖定（剩餘 %s 秒）",
       toast_input_pwd: "請輸入管理密碼",
       toast_logout: "已安全登出",
       toast_input_valid_ip: "請輸入有效的 IP 或 CIDR",

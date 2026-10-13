@@ -5,7 +5,10 @@
   },
   "auth": {
     "admin_password": "ChangeThisPassword123!",
-    "session_timeout_hours": 24
+    "session_timeout_hours": 24,
+    "max_failed_attempts": 5,
+    "lockout_duration_seconds": 900,
+    "failure_delay_seconds": 1.5
   },
   "brutal": {
     "brutalctl_bin": "brutalctl",

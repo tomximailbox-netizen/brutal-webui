@@ -212,6 +212,41 @@ class TestApiIntegration(unittest.TestCase):
         res = self.make_request("GET", "/api/status", token=token)
         self.assertIn("401", res["status"])
 
+    def test_login_brute_force_lockout(self):
+        # 针对特定 IP 进行防暴力破解测试
+        attack_ip = "198.51.100.99"
+        # 调整测试 app 的防爆破参数
+        self.app.auth.max_failed_attempts = 3
+        self.app.auth.lockout_duration_seconds = 2
+        self.app.auth.failure_delay_seconds = 0.05
+
+        # 连续尝试错误密码 2 次
+        for attempt in (1, 2):
+            res = self.make_request(
+                "POST", "/api/login",
+                body={"password": "WrongPwd"},
+                extra_headers={"REMOTE_ADDR": attack_ip}
+            )
+            self.assertIn("403", res["status"])
+            self.assertIn("还可尝试", res["json"].get("error", ""))
+
+        # 第 3 次失败触发锁定，返回 429
+        res_locked = self.make_request(
+            "POST", "/api/login",
+            body={"password": "WrongPwd"},
+            extra_headers={"REMOTE_ADDR": attack_ip}
+        )
+        self.assertIn("429", res_locked["status"])
+        self.assertTrue(res_locked["json"].get("locked"))
+
+        # 锁定期间即使输入正确密码也被拒绝
+        res_correct_blocked = self.make_request(
+            "POST", "/api/login",
+            body={"password": self.admin_password},
+            extra_headers={"REMOTE_ADDR": attack_ip}
+        )
+        self.assertIn("429", res_correct_blocked["status"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,20 +1,93 @@
 import hmac
 import secrets
+import threading
 import time
-from typing import Dict
+from typing import Dict, List, Tuple
 
 
 class AuthManager:
-    """管理管理员密码校验与会话 Token 签发与过期验证"""
+    """管理管理员密码校验、会话 Token 签发与过期验证，以及防暴力破解安全管控"""
 
-    def __init__(self, admin_password: str, token_expire_hours: int = 24):
+    def __init__(
+        self,
+        admin_password: str,
+        token_expire_hours: int = 24,
+        max_failed_attempts: int = 5,
+        lockout_duration_seconds: int = 900,
+        failure_delay_seconds: float = 1.5
+    ):
         self.admin_password = admin_password
         self.token_expire_seconds = token_expire_hours * 3600
         # 内存中维护 active tokens: { token: expire_timestamp }
         self._tokens: Dict[str, float] = {}
 
+        # 防暴力破解控制参数
+        self.max_failed_attempts = max_failed_attempts
+        self.lockout_duration_seconds = lockout_duration_seconds
+        self.failure_delay_seconds = failure_delay_seconds
+
+        # 失败计数与锁定状态（线程安全）
+        self._lock = threading.Lock()
+        self._failed_attempts: Dict[str, List[float]] = {}
+        self._lockouts: Dict[str, float] = {}
+
     def update_password(self, new_password: str):
         self.admin_password = new_password
+
+    def is_ip_locked(self, ip: str) -> Tuple[bool, int]:
+        """检查指定 IP 是否正处于冻结锁定期，返回 (是否锁定, 剩余锁定秒数)"""
+        if not ip:
+            return False, 0
+
+        now = time.time()
+        with self._lock:
+            unlock_time = self._lockouts.get(ip)
+            if unlock_time:
+                if now < unlock_time:
+                    remaining = int(unlock_time - now) + 1
+                    return True, remaining
+                else:
+                    # 锁定期已过，自动解除
+                    del self._lockouts[ip]
+                    if ip in self._failed_attempts:
+                        del self._failed_attempts[ip]
+            return False, 0
+
+    def record_login_failure(self, ip: str) -> Tuple[int, bool]:
+        """记录一次登录失败，执行防爆破延迟惩罚，达到阈值时触发临时封禁"""
+        is_locked = False
+        count = 1
+
+        if ip:
+            now = time.time()
+            with self._lock:
+                # 保留最近锁定周期内的失败记录
+                records = self._failed_attempts.get(ip, [])
+                cutoff = now - max(self.lockout_duration_seconds, 600)
+                records = [t for t in records if t >= cutoff]
+                records.append(now)
+                self._failed_attempts[ip] = records
+                count = len(records)
+
+                if count >= self.max_failed_attempts:
+                    self._lockouts[ip] = now + self.lockout_duration_seconds
+                    is_locked = True
+
+        # 渐进式延迟惩罚：输错密码强制休眠，大幅拖慢暴力破解工具的字典穷举效率
+        if self.failure_delay_seconds > 0:
+            time.sleep(self.failure_delay_seconds)
+
+        return count, is_locked
+
+    def record_login_success(self, ip: str):
+        """登录成功时立即清零该 IP 的错误记录与锁定状态"""
+        if not ip:
+            return
+        with self._lock:
+            if ip in self._failed_attempts:
+                del self._failed_attempts[ip]
+            if ip in self._lockouts:
+                del self._lockouts[ip]
 
     def verify_password(self, input_password: str) -> bool:
         if not input_password or not self.admin_password:
