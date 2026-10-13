@@ -69,6 +69,37 @@ class TestAuthRateLimit(unittest.TestCase):
         is_locked, _ = self.auth.is_ip_locked(self.test_ip)
         self.assertFalse(is_locked)
 
+    def test_ipv6_64_subnet_lockout(self):
+        # 验证 IPv6 地址自动按 /64 子网聚合并锁定
+        ipv6_addr1 = "2001:db8:abcd:1234::1"
+        ipv6_addr2 = "2001:db8:abcd:1234::2"
+        ipv6_addr3 = "2001:db8:abcd:1234::dead:beef"
+        ipv6_diff_subnet = "2001:db8:abcd:5678::1"
+
+        # 同一个 /64 子网内变换不同后缀尝试登录
+        self.auth.record_login_failure(ipv6_addr1)
+        self.auth.record_login_failure(ipv6_addr2)
+        is_locked, _ = self.auth.is_ip_locked(ipv6_addr3)
+        self.assertFalse(is_locked)
+
+        # 第 3 次失败触发锁定
+        self.auth.record_login_failure(ipv6_addr3)
+
+        # 验证同一 /64 子网下的任意全新未出现过的后缀地址一并处于锁定状态
+        ipv6_new_suffix = "2001:db8:abcd:1234::8888"
+        is_locked, remaining = self.auth.is_ip_locked(ipv6_new_suffix)
+        self.assertTrue(is_locked)
+        self.assertGreater(remaining, 0)
+
+        # 验证其它 /64 子网完全不受牵连
+        is_locked_diff, _ = self.auth.is_ip_locked(ipv6_diff_subnet)
+        self.assertFalse(is_locked_diff)
+
+        # 验证该网段下任意 IP 登录成功后解除整个 /64 的锁定
+        self.auth.record_login_success("2001:db8:abcd:1234::cafe")
+        is_locked_after, _ = self.auth.is_ip_locked(ipv6_new_suffix)
+        self.assertFalse(is_locked_after)
+
 
 if __name__ == "__main__":
     unittest.main()

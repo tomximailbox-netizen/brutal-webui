@@ -1,4 +1,5 @@
 import hmac
+import ipaddress
 import secrets
 import threading
 import time
@@ -34,23 +35,43 @@ class AuthManager:
     def update_password(self, new_password: str):
         self.admin_password = new_password
 
+    @staticmethod
+    def get_client_lock_key(ip: str) -> str:
+        """
+        根据客户端 IP 获取限流与锁定的安全聚合键:
+        - IPv4: 按单 IP 精准锁定 (/32)
+        - IPv6: 自动聚合为其前 64 位子网 (/64)，防止攻击者通过 SLAAC 隐私地址或多 IP 轮换逃避频次封禁
+        """
+        if not ip:
+            return ""
+        clean = ip.strip()
+        try:
+            addr = ipaddress.ip_address(clean)
+            if addr.version == 6:
+                network = ipaddress.IPv6Network(f"{clean}/64", strict=False)
+                return str(network)
+            return str(addr)
+        except ValueError:
+            return clean
+
     def is_ip_locked(self, ip: str) -> Tuple[bool, int]:
         """检查指定 IP 是否正处于冻结锁定期，返回 (是否锁定, 剩余锁定秒数)"""
         if not ip:
             return False, 0
 
+        key = self.get_client_lock_key(ip)
         now = time.time()
         with self._lock:
-            unlock_time = self._lockouts.get(ip)
+            unlock_time = self._lockouts.get(key)
             if unlock_time:
                 if now < unlock_time:
                     remaining = int(unlock_time - now) + 1
                     return True, remaining
                 else:
                     # 锁定期已过，自动解除
-                    del self._lockouts[ip]
-                    if ip in self._failed_attempts:
-                        del self._failed_attempts[ip]
+                    del self._lockouts[key]
+                    if key in self._failed_attempts:
+                        del self._failed_attempts[key]
             return False, 0
 
     def record_login_failure(self, ip: str) -> Tuple[int, bool]:
@@ -59,18 +80,19 @@ class AuthManager:
         count = 1
 
         if ip:
+            key = self.get_client_lock_key(ip)
             now = time.time()
             with self._lock:
                 # 保留最近锁定周期内的失败记录
-                records = self._failed_attempts.get(ip, [])
+                records = self._failed_attempts.get(key, [])
                 cutoff = now - max(self.lockout_duration_seconds, 600)
                 records = [t for t in records if t >= cutoff]
                 records.append(now)
-                self._failed_attempts[ip] = records
+                self._failed_attempts[key] = records
                 count = len(records)
 
                 if count >= self.max_failed_attempts:
-                    self._lockouts[ip] = now + self.lockout_duration_seconds
+                    self._lockouts[key] = now + self.lockout_duration_seconds
                     is_locked = True
 
         # 渐进式延迟惩罚：输错密码强制休眠，大幅拖慢暴力破解工具的字典穷举效率
@@ -80,14 +102,15 @@ class AuthManager:
         return count, is_locked
 
     def record_login_success(self, ip: str):
-        """登录成功时立即清零该 IP 的错误记录与锁定状态"""
+        """登录成功时立即清零该 IP（或对应 IPv6 /64 子网）的错误记录与锁定状态"""
         if not ip:
             return
+        key = self.get_client_lock_key(ip)
         with self._lock:
-            if ip in self._failed_attempts:
-                del self._failed_attempts[ip]
-            if ip in self._lockouts:
-                del self._lockouts[ip]
+            if key in self._failed_attempts:
+                del self._failed_attempts[key]
+            if key in self._lockouts:
+                del self._lockouts[key]
 
     def verify_password(self, input_password: str) -> bool:
         if not input_password or not self.admin_password:

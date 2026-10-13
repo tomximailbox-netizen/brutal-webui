@@ -247,6 +247,25 @@ class TestApiIntegration(unittest.TestCase):
         )
         self.assertIn("429", res_correct_blocked["status"])
 
+    def test_ipv6_subnet_lockout_via_api(self):
+        # 验证通过 HTTP API 访问时 IPv6 /64 子网防爆破锁定生效
+        self.app.auth.max_failed_attempts = 2
+        self.app.auth.lockout_duration_seconds = 2
+        self.app.auth.failure_delay_seconds = 0.05
+
+        v6_1 = "2408:8207:1111:2222::1"
+        v6_2 = "2408:8207:1111:2222::cafe"
+        v6_new = "2408:8207:1111:2222::9999"
+
+        # 尝试 2 次失败
+        self.make_request("POST", "/api/login", body={"password": "bad"}, extra_headers={"REMOTE_ADDR": v6_1})
+        res = self.make_request("POST", "/api/login", body={"password": "bad"}, extra_headers={"REMOTE_ADDR": v6_2})
+        self.assertIn("429", res["status"])
+
+        # 同一 /64 子网的全新地址访问即被 429 锁定拦截
+        res_blocked = self.make_request("POST", "/api/login", body={"password": "any"}, extra_headers={"REMOTE_ADDR": v6_new})
+        self.assertIn("429", res_blocked["status"])
+
 
 if __name__ == "__main__":
     unittest.main()
