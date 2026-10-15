@@ -216,12 +216,7 @@ function renderRules() {
       // 域名同步来源且已识别到具体域名
       const domainTooltip = t("domain_source_tooltip", r.domain);
       sourceBadge = `<span class="px-2 py-0.5 rounded-full font-sans text-[11px] font-normal bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 cursor-help" title="${domainTooltip}">${t("badge_domain")}</span>`;
-      destHtml = `
-        <span class="cursor-help underline underline-offset-4 decoration-dashed decoration-cyan-500/60 hover:text-cyan-200 transition-colors flex items-center gap-1.5" title="${domainTooltip}">
-          <span>${r.destination}</span>
-          <span class="text-xs text-cyan-400/80" title="${domainTooltip}">🌐</span>
-        </span>
-      `;
+      destHtml = `<span class="cursor-help hover:text-cyan-200 transition-colors" title="${domainTooltip}">${r.destination}</span>`;
     }
 
     return `
