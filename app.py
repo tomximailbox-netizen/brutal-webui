@@ -49,8 +49,13 @@ class BrutalWebApp:
         )
 
         brutal_conf = self.config.get("brutal", {})
+        webui_conf = self.config.get("webui", {})
+        self.poll_interval_seconds = int(webui_conf.get("poll_interval_seconds", 5))
+        status_cache_ttl = float(webui_conf.get("status_cache_ttl_seconds", 3))
+
         self.brutal = BrutalWrapper(
-            brutalctl_bin=brutal_conf.get("brutalctl_bin", "brutalctl")
+            brutalctl_bin=brutal_conf.get("brutalctl_bin", "brutalctl"),
+            cache_ttl_seconds=status_cache_ttl
         )
 
         domain_file = os.path.join(BASE_DIR, brutal_conf.get("domain_file_path", "brut_domain.txt"))
@@ -71,28 +76,61 @@ class BrutalWebApp:
         # 启动后台定时同步调度（如果启用）
         scheduler_conf = self.config.get("sync_scheduler", {})
         if scheduler_conf.get("enabled", False):
-            interval = scheduler_conf.get("interval_seconds", 300)
+            interval = scheduler_conf.get("interval_seconds", 600)
             startup_delay = float(scheduler_conf.get("startup_sync_delay", 5))
             self.sync_runner.start_scheduler(interval, initial_delay=startup_delay)
 
-    def load_config(self) -> dict:
-        if os.path.exists(self.config_path):
-            try:
-                with open(self.config_path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
-                print(f"[Warn] 加载配置失败，使用默认配置: {e}")
+    @staticmethod
+    def _merge_defaults(user_conf: dict, default_conf: dict) -> tuple:
+        """平滑递归合并默认配置：新版本增加的配置项自动补齐，但绝对保留用户原有的所有自定义值"""
+        changed = False
+        merged = dict(user_conf)
+        for key, default_val in default_conf.items():
+            if key not in merged:
+                merged[key] = json.loads(json.dumps(default_val))
+                changed = True
+            elif isinstance(default_val, dict) and isinstance(merged[key], dict):
+                sub_merged, sub_changed = BrutalWebApp._merge_defaults(merged[key], default_val)
+                merged[key] = sub_merged
+                if sub_changed:
+                    changed = True
+        return merged, changed
+
+    def get_default_config(self) -> dict:
         return {
             "server": {"host": "0.0.0.0", "port": 8080},
-            "auth": {"admin_password": "admin123", "session_timeout_hours": 24},
+            "auth": {
+                "admin_password": "admin123",
+                "session_timeout_hours": 24,
+                "max_failed_attempts": 5,
+                "lockout_duration_seconds": 900,
+                "failure_delay_seconds": 1.5
+            },
             "brutal": {
                 "brutalctl_bin": "brutalctl",
                 "default_rate_mbps": 100,
                 "domain_file_path": "./brut_domain.txt",
+                "ip_file_path": "./brut_ip.txt",
                 "sync_script_path": "./brutal_sync.sh"
             },
-            "sync_scheduler": {"enabled": True, "interval_seconds": 300}
+            "sync_scheduler": {"enabled": True, "interval_seconds": 600, "startup_sync_delay": 5},
+            "webui": {"poll_interval_seconds": 5, "status_cache_ttl_seconds": 3},
+            "ssl": {"enabled": False, "cert_file": "./cert.pem", "key_file": "./key.pem"}
         }
+
+    def load_config(self) -> dict:
+        default_conf = self.get_default_config()
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    user_conf = json.load(f)
+                merged, changed = self._merge_defaults(user_conf, default_conf)
+                if changed:
+                    self.save_config(merged)
+                return merged
+            except Exception as e:
+                print(f"[Warn] 加载配置失败，使用默认配置: {e}")
+        return default_conf
 
     def save_config(self, new_config: dict):
         self.config = new_config
@@ -381,7 +419,8 @@ class BrutalWebApp:
 
     def api_status(self, environ, start_response):
         static_ips = set(self.ip_mgr.get_effective_ips())
-        rules = self.brutal.list_rules(static_ips=static_ips)
+        domain_ip_map = self.domain_mgr.get_cached_ip_to_domain_map()
+        rules = self.brutal.list_rules(static_ips=static_ips, domain_ip_map=domain_ip_map)
         effective_domains = self.domain_mgr.get_effective_domains()
         sync_status = self.sync_runner.get_status()
         client_ip = self._extract_client_ip(environ)
@@ -397,12 +436,14 @@ class BrutalWebApp:
             "static_ip_count": len(static_ips),
             "manual_count": manual_count,
             "total_sent_mb": round(total_sent_mb, 2),
+            "poll_interval_seconds": self.poll_interval_seconds,
             "sync": sync_status
         }, start_response)
 
     def api_list_rules(self, start_response):
         static_ips = set(self.ip_mgr.get_effective_ips())
-        rules = self.brutal.list_rules(static_ips=static_ips)
+        domain_ip_map = self.domain_mgr.get_cached_ip_to_domain_map()
+        rules = self.brutal.list_rules(static_ips=static_ips, domain_ip_map=domain_ip_map)
         return self.json_response({"rules": rules}, start_response)
 
     def api_add_rule(self, environ, start_response):
@@ -528,6 +569,7 @@ class BrutalWebApp:
     def api_sync_run(self, start_response):
         success, msg = self.sync_runner.trigger_sync()
         if success:
+            self.brutal.invalidate_cache()
             return self.json_response({"status": "ok", "msg": msg}, start_response)
         return self.json_response({"error": msg}, start_response, status="409 Conflict")
 
@@ -542,6 +584,11 @@ class BrutalWebApp:
         if "auth" in safe_conf and "admin_password" in safe_conf["auth"]:
             safe_conf["auth"]["has_password"] = True
             safe_conf["auth"]["admin_password"] = "******"
+        if "webui" not in safe_conf:
+            safe_conf["webui"] = {
+                "poll_interval_seconds": 5,
+                "status_cache_ttl_seconds": 3
+            }
         return self.json_response(safe_conf, start_response)
 
     def api_update_config(self, environ, start_response):
@@ -557,9 +604,11 @@ class BrutalWebApp:
 
         scheduler_conf = body.get("sync_scheduler", {})
         if scheduler_conf:
-            enabled = scheduler_conf.get("enabled", self.config["sync_scheduler"]["enabled"])
-            interval = int(scheduler_conf.get("interval_seconds", self.config["sync_scheduler"]["interval_seconds"]))
-            startup_delay = float(scheduler_conf.get("startup_sync_delay", self.config["sync_scheduler"].get("startup_sync_delay", 5)))
+            enabled = scheduler_conf.get("enabled", self.config.get("sync_scheduler", {}).get("enabled", True))
+            interval = int(scheduler_conf.get("interval_seconds", self.config.get("sync_scheduler", {}).get("interval_seconds", 600)))
+            startup_delay = float(scheduler_conf.get("startup_sync_delay", self.config.get("sync_scheduler", {}).get("startup_sync_delay", 5)))
+            if "sync_scheduler" not in self.config:
+                self.config["sync_scheduler"] = {}
             self.config["sync_scheduler"]["enabled"] = enabled
             self.config["sync_scheduler"]["interval_seconds"] = interval
             self.config["sync_scheduler"]["startup_sync_delay"] = startup_delay
@@ -568,6 +617,19 @@ class BrutalWebApp:
                 self.sync_runner.start_scheduler(interval, initial_delay=0)
             else:
                 self.sync_runner.stop_scheduler()
+
+        webui_conf = body.get("webui", {})
+        if webui_conf:
+            if "webui" not in self.config:
+                self.config["webui"] = {}
+            if "poll_interval_seconds" in webui_conf:
+                poll_interval = max(1, int(webui_conf["poll_interval_seconds"]))
+                self.config["webui"]["poll_interval_seconds"] = poll_interval
+                self.poll_interval_seconds = poll_interval
+            if "status_cache_ttl_seconds" in webui_conf:
+                cache_ttl = max(0.0, float(webui_conf["status_cache_ttl_seconds"]))
+                self.config["webui"]["status_cache_ttl_seconds"] = cache_ttl
+                self.brutal.set_cache_ttl(cache_ttl)
 
         self.save_config(self.config)
         return self.json_response({"status": "ok", "msg": "配置更新成功"}, start_response)

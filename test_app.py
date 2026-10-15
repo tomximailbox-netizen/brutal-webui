@@ -288,7 +288,7 @@ class TestSyncRunner(unittest.TestCase):
     def test_startup_initial_delay_sync(self):
         # 测试启动后延迟执行首次同步
         runner = SyncRunner(script_path="mock", domain_file="mock", mock_mode=True)
-        runner.start_scheduler(interval_seconds=300, initial_delay=0.1)
+        runner.start_scheduler(interval_seconds=600, initial_delay=0.1)
         try:
             # 轮询等待首次同步完成
             start_time = time.time()

@@ -3,6 +3,8 @@ import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 from typing import List, Dict, Any, Tuple
 
 
@@ -41,8 +43,15 @@ def validate_ip_cidr(ip_str: str, for_delete: bool = False) -> str:
 class BrutalWrapper:
     """包装系统 brutalctl 命令行工具，支持真实执行与本地 Mock 内存仿真"""
 
-    def __init__(self, brutalctl_bin: str = "brutalctl", mock_mode: bool = False):
+    def __init__(self, brutalctl_bin: str = "brutalctl", mock_mode: bool = False, cache_ttl_seconds: float = 3.0):
         self.brutalctl_bin = brutalctl_bin
+        self.cache_ttl_seconds = float(cache_ttl_seconds) if cache_ttl_seconds is not None else 3.0
+
+        # 查询结果防抖短时缓存
+        self._cache_lock = threading.Lock()
+        self._cached_raw_rules: List[Dict[str, Any]] = None
+        self._last_cache_time: float = 0.0
+
         # 判定是否自动启用 mock 模式
         has_bin = shutil.which(self.brutalctl_bin) is not None
         is_posix = os.name == 'posix'
@@ -97,25 +106,51 @@ class BrutalWrapper:
         try:
             valid_ip = validate_ip_cidr(ip_or_cidr, for_delete=True)
             self._manual_ips.discard(valid_ip)
+            self.invalidate_cache()
         except ValueError:
             pass
 
-    def list_rules(self, static_ips: set = None) -> List[Dict[str, Any]]:
-        """列出所有生效的流量控制规则，附带 source 来源标记 (static/manual/domain)"""
-        if self.mock_mode:
-            rules = [dict(r) for r in self._mock_rules]
-        else:
-            try:
-                res = subprocess.run(
-                    [self.brutalctl_bin, "list"],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    timeout=10
-                )
-                rules = self._parse_list_output(res.stdout)
-            except Exception:
-                rules = []
+    def set_cache_ttl(self, ttl_seconds: float):
+        """动态更新缓存 TTL 时长（秒）"""
+        self.cache_ttl_seconds = max(0.0, float(ttl_seconds))
+        self.invalidate_cache()
+
+    def invalidate_cache(self):
+        """主动清空规则查询缓存，确保增删修改即时生效"""
+        with self._cache_lock:
+            self._cached_raw_rules = None
+            self._last_cache_time = 0.0
+
+    def list_rules(self, static_ips: set = None, domain_ip_map: dict = None) -> List[Dict[str, Any]]:
+        """列出所有生效的流量控制规则，附带 source 来源标记 (static/manual/domain) 及关联的来源域名"""
+        now = time.time()
+        with self._cache_lock:
+            if (
+                self.cache_ttl_seconds > 0
+                and self._cached_raw_rules is not None
+                and (now - self._last_cache_time) < self.cache_ttl_seconds
+            ):
+                raw_rules = [dict(r) for r in self._cached_raw_rules]
+            else:
+                if self.mock_mode:
+                    raw_rules = [dict(r) for r in self._mock_rules]
+                else:
+                    try:
+                        res = subprocess.run(
+                            [self.brutalctl_bin, "list"],
+                            capture_output=True,
+                            text=True,
+                            check=True,
+                            timeout=10
+                        )
+                        raw_rules = self._parse_list_output(res.stdout)
+                    except Exception:
+                        raw_rules = []
+                if self.cache_ttl_seconds > 0:
+                    self._cached_raw_rules = [dict(r) for r in raw_rules]
+                    self._last_cache_time = now
+
+        rules = [dict(r) for r in raw_rules]
 
         static_full = {s.strip() for s in static_ips} if static_ips else set()
         static_raw = {s.strip().split('/')[0] for s in static_ips} if static_ips else set()
@@ -137,6 +172,10 @@ class BrutalWrapper:
             else:
                 r["source"] = "domain"
                 r["is_manual"] = False
+                if domain_ip_map:
+                    matched = domain_ip_map.get(dest) or domain_ip_map.get(dest_raw)
+                    if matched:
+                        r["domain"] = matched
 
         return rules
 
@@ -192,6 +231,8 @@ class BrutalWrapper:
         if is_manual:
             self._manual_ips.add(valid_ip)
 
+        self.invalidate_cache()
+
         if self.mock_mode:
             # 查重
             for r in self._mock_rules:
@@ -234,6 +275,7 @@ class BrutalWrapper:
 
         # 同步从手动白名单中剔除
         self._manual_ips.discard(valid_ip)
+        self.invalidate_cache()
 
         if self.mock_mode:
             initial_len = len(self._mock_rules)

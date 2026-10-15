@@ -184,7 +184,7 @@ class SyncRunner:
                 except Exception:
                     pass
 
-    def start_scheduler(self, interval_seconds: int = 300, initial_delay: float = 5.0):
+    def start_scheduler(self, interval_seconds: int = 600, initial_delay: float = 5.0):
         """启动后台定时同步调度器，支持服务启动后延迟 initial_delay 秒立即执行首次同步"""
         self.stop_scheduler()
         self._scheduler_interval = max(30, interval_seconds)

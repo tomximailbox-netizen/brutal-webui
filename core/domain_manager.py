@@ -1,6 +1,8 @@
 import os
 import socket
 import tempfile
+import threading
+import time
 from typing import List, Tuple, Dict, Any
 
 
@@ -9,6 +11,66 @@ class DomainManager:
 
     def __init__(self, file_path: str = "./brut_domain.txt"):
         self.file_path = os.path.abspath(file_path)
+        self._cache_lock = threading.Lock()
+        self._cached_ip_map: Dict[str, str] = None
+        self._last_map_time: float = 0.0
+        self._mock_ip_mapping: Dict[str, str] = {}
+
+    def set_mock_ip_mapping(self, mapping: Dict[str, str]):
+        """测试或 Mock 环境下注入指定的 IP 到域名映射"""
+        self._mock_ip_mapping = dict(mapping)
+        self.clear_cache()
+
+    def clear_cache(self):
+        """清空 IP-域名 解析缓存（保存文件或执行同步时调用）"""
+        with self._cache_lock:
+            self._cached_ip_map = None
+            self._last_map_time = 0.0
+
+    def get_cached_ip_to_domain_map(self, ttl_seconds: float = 60.0) -> Dict[str, str]:
+        """
+        获取当前 brut_domain.txt 中所有域名解析出的 IP 到域名的映射字典。
+        包含纯 IP 与带掩码 CIDR 键（如 '1.2.3.4' 和 '1.2.3.4/32'）。
+        内置 TTL 缓存，避免每次查询都执行昂贵的阻塞 DNS 网络探测。
+        """
+        now = time.time()
+        with self._cache_lock:
+            if self._cached_ip_map is not None and (now - self._last_map_time) < ttl_seconds:
+                return dict(self._cached_ip_map)
+
+        result: Dict[str, str] = {}
+
+        # 1. 合并显式设置的 mock/自定义映射
+        if self._mock_ip_mapping:
+            for ip, dom in self._mock_ip_mapping.items():
+                clean_ip = ip.strip()
+                result[clean_ip] = dom
+                if "/" not in clean_ip:
+                    mask = "/128" if ":" in clean_ip else "/32"
+                    result[f"{clean_ip}{mask}"] = dom
+
+        # 2. 遍历域名清单解析真实 IP
+        domains = self.get_effective_domains()
+        for domain in domains:
+            try:
+                addrinfo = socket.getaddrinfo(domain, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+                for item in addrinfo:
+                    raw_ip = item[4][0]
+                    if "::ffff:" in raw_ip.lower():
+                        continue
+                    clean_ip = raw_ip.strip()
+                    result[clean_ip] = domain
+                    if "/" not in clean_ip:
+                        mask = "/128" if ":" in clean_ip else "/32"
+                        result[f"{clean_ip}{mask}"] = domain
+            except Exception:
+                continue
+
+        with self._cache_lock:
+            self._cached_ip_map = result
+            self._last_map_time = now
+
+        return dict(result)
 
     def get_raw_content(self) -> str:
         """获取原始文件内容（包含注释与换行）"""
@@ -78,6 +140,7 @@ class DomainManager:
                 temp_name = tf.name
 
             os.replace(temp_name, self.file_path)
+            self.clear_cache()
             return True, "域名清单保存成功", effective_count
         except Exception as e:
             return False, f"保存失败: {str(e)}", 0

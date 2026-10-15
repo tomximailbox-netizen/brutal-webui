@@ -345,14 +345,31 @@
 
           <div class="space-y-2">
             <label class="block text-xs font-medium text-slate-400" data-i18n="settings_interval_label">同步执行周期 (秒)</label>
-            <input id="setting-interval" type="number" min="30" step="30" value="300" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono">
-            <p class="text-xs text-slate-500" data-i18n="settings_interval_desc">建议设置为 300 秒 (5分钟) 或更高，避免过度频繁请求 DNS 解析</p>
+            <input id="setting-interval" type="number" min="30" step="30" value="600" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono">
+            <p class="text-xs text-slate-500" data-i18n="settings_interval_desc">建议设置为 600 秒 (10分钟) 或更高，避免过度频繁请求 DNS 解析</p>
           </div>
 
           <div class="space-y-2">
             <label class="block text-xs font-medium text-slate-400" data-i18n="settings_startup_label">服务启动/重启后首次同步延迟 (秒)</label>
             <input id="setting-startup-delay" type="number" min="1" step="1" value="5" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono">
             <p class="text-xs text-slate-500" data-i18n="settings_startup_desc">服务器启动或服务重启后延迟此秒数立即执行首次同步，迅速拉取域名生效规则</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-panel p-6 rounded-2xl space-y-5">
+        <h3 class="text-sm font-bold text-white border-b border-slate-800 pb-3" data-i18n="settings_webui_title">控制台性能与轮询控制</h3>
+        <div class="space-y-4">
+          <div class="space-y-2">
+            <label class="block text-xs font-medium text-slate-400" data-i18n="settings_poll_interval_label">前台轮询刷新间隔 (秒)</label>
+            <input id="setting-poll-interval" type="number" min="1" max="60" step="1" value="5" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono">
+            <p class="text-xs text-slate-500" data-i18n="settings_poll_interval_desc">页面处于前台活动时自动刷新状态的间隔（切换标签页或最小化时自动挂起暂停）</p>
+          </div>
+
+          <div class="space-y-2">
+            <label class="block text-xs font-medium text-slate-400" data-i18n="settings_cache_ttl_label">内核状态查询缓存时长 (秒)</label>
+            <input id="setting-cache-ttl" type="number" min="0" max="60" step="0.5" value="3" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono">
+            <p class="text-xs text-slate-500" data-i18n="settings_cache_ttl_desc">短时缓存 brutalctl 查询结果（0 表示每次实时查），在添加、删除规则或手动同步时立即自动失效清除</p>
           </div>
         </div>
       </div>

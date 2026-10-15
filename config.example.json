@@ -19,8 +19,12 @@
   },
   "sync_scheduler": {
     "enabled": true,
-    "interval_seconds": 300,
+    "interval_seconds": 600,
     "startup_sync_delay": 5
+  },
+  "webui": {
+    "poll_interval_seconds": 5,
+    "status_cache_ttl_seconds": 3
   },
   "ssl": {
     "enabled": false,

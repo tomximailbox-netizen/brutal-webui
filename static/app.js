@@ -7,7 +7,8 @@ const state = {
   domainsContent: "",
   activeTab: "rules",
   isSyncing: false,
-  logInterval: null
+  pollIntervalSeconds: 5,
+  pollTimer: null
 };
 
 // --- Toast 弹窗 ---
@@ -79,6 +80,7 @@ async function apiCall(endpoint, method = "GET", data = null) {
 }
 
 async function handleLogout() {
+  stopPolling();
   try {
     await apiCall("/api/logout", "POST");
   } catch (e) {}
@@ -134,6 +136,11 @@ async function loadStatus() {
       if (clientIpDisplay) {
         clientIpDisplay.textContent = state.clientIp;
       }
+    }
+
+    // 记录轮询间隔
+    if (data.poll_interval_seconds) {
+      state.pollIntervalSeconds = Number(data.poll_interval_seconds) || 5;
     }
 
     // 统计指标
@@ -197,6 +204,7 @@ function renderRules() {
     let sourceBadge = `<span class="px-2 py-0.5 rounded-full font-sans text-[11px] font-normal bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">${t("badge_domain")}</span>`;
     let dotColor = "bg-emerald-400";
     let isManual = r.is_manual || r.source === 'manual';
+    let destHtml = `<span>${r.destination}</span>`;
 
     if (r.source === 'static') {
       sourceBadge = `<span class="px-2 py-0.5 rounded-full font-sans text-[11px] font-normal bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">${t("badge_static")}</span>`;
@@ -204,13 +212,23 @@ function renderRules() {
     } else if (isManual) {
       sourceBadge = `<span class="px-2 py-0.5 rounded-full font-sans text-[11px] font-normal bg-amber-500/20 text-amber-300 border border-amber-500/30">${t("badge_manual")}</span>`;
       dotColor = "bg-amber-400";
+    } else if (r.domain) {
+      // 域名同步来源且已识别到具体域名
+      const domainTooltip = t("domain_source_tooltip", r.domain);
+      sourceBadge = `<span class="px-2 py-0.5 rounded-full font-sans text-[11px] font-normal bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 cursor-help" title="${domainTooltip}">${t("badge_domain")}</span>`;
+      destHtml = `
+        <span class="cursor-help underline underline-offset-4 decoration-dashed decoration-cyan-500/60 hover:text-cyan-200 transition-colors flex items-center gap-1.5" title="${domainTooltip}">
+          <span>${r.destination}</span>
+          <span class="text-xs text-cyan-400/80" title="${domainTooltip}">🌐</span>
+        </span>
+      `;
     }
 
     return `
     <tr class="hover:bg-slate-800/40 transition border-b border-slate-800/60 text-sm">
       <td class="py-3 px-4 font-mono font-medium text-indigo-300 flex items-center gap-2 flex-wrap">
         <span class="w-2 h-2 rounded-full ${dotColor}"></span>
-        <span>${r.destination}</span>
+        ${destHtml}
         ${sourceBadge}
       </td>
       <td class="py-3 px-4">
@@ -489,23 +507,40 @@ async function loadSettings() {
     const data = await apiCall("/api/config");
     if (data.need_login) return;
 
-    document.getElementById("setting-interval").value = data.sync_scheduler?.interval_seconds || 300;
+    document.getElementById("setting-interval").value = data.sync_scheduler?.interval_seconds || 600;
     document.getElementById("setting-startup-delay").value = data.sync_scheduler?.startup_sync_delay ?? 5;
     document.getElementById("setting-scheduler-enabled").checked = data.sync_scheduler?.enabled !== false;
+
+    // WebUI 轮询刷新与内核缓存设置
+    const pollInput = document.getElementById("setting-poll-interval");
+    if (pollInput) {
+      pollInput.value = data.webui?.poll_interval_seconds || 5;
+    }
+    const cacheInput = document.getElementById("setting-cache-ttl");
+    if (cacheInput) {
+      cacheInput.value = data.webui?.status_cache_ttl_seconds ?? 3;
+    }
   } catch (e) {}
 }
 
 async function handleSaveSettings() {
-  const interval = Number(document.getElementById("setting-interval").value) || 300;
+  const interval = Number(document.getElementById("setting-interval").value) || 600;
   const startupDelay = Number(document.getElementById("setting-startup-delay").value) ?? 5;
   const enabled = document.getElementById("setting-scheduler-enabled").checked;
   const newPwd = document.getElementById("setting-new-password").value.trim();
+
+  const pollInterval = Number(document.getElementById("setting-poll-interval")?.value) || 5;
+  const cacheTtl = Number(document.getElementById("setting-cache-ttl")?.value) ?? 3;
 
   const payload = {
     sync_scheduler: {
       enabled: enabled,
       interval_seconds: interval,
       startup_sync_delay: startupDelay
+    },
+    webui: {
+      poll_interval_seconds: pollInterval,
+      status_cache_ttl_seconds: cacheTtl
     }
   };
 
@@ -517,23 +552,53 @@ async function handleSaveSettings() {
     const res = await apiCall("/api/config", "PUT", payload);
     showToast(res.msg || t("toast_config_updated"), "success");
     document.getElementById("setting-new-password").value = "";
+    state.pollIntervalSeconds = pollInterval;
+    startPolling();
     loadStatus();
   } catch (e) {}
+}
+
+// --- 智能轮询调度与防空转管理 ---
+function stopPolling() {
+  if (state.pollTimer) {
+    clearTimeout(state.pollTimer);
+    state.pollTimer = null;
+  }
+}
+
+function scheduleNextPoll() {
+  stopPolling();
+  // 当页面处于后台标签页或用户未授权登录时，暂停心跳排期，彻底避免后台空转消耗
+  if (document.hidden || !state.token) {
+    return;
+  }
+
+  const intervalMs = Math.max(1000, (Number(state.pollIntervalSeconds) || 5) * 1000);
+  state.pollTimer = setTimeout(async () => {
+    try {
+      if (!document.hidden && state.token) {
+        await loadStatus();
+        if (state.activeTab === "logs") {
+          await loadLogs();
+        }
+      }
+    } catch (e) {
+    } finally {
+      // 链式排期下一次，避免并发请求堆积
+      scheduleNextPoll();
+    }
+  }, intervalMs);
+}
+
+function startPolling() {
+  scheduleNextPoll();
 }
 
 // --- 初始装载 ---
 function loadAllData() {
   loadStatus();
   switchTab(state.activeTab);
-
-  // 定时刷新状态与日志
-  if (state.logInterval) clearInterval(state.logInterval);
-  state.logInterval = setInterval(() => {
-    if (state.token) {
-      loadStatus();
-      if (state.activeTab === "logs") loadLogs();
-    }
-  }, 4000);
+  startPolling();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -543,5 +608,20 @@ document.addEventListener("DOMContentLoaded", () => {
   // 绑定搜索框实时过滤
   document.getElementById("rule-search-input")?.addEventListener("input", () => {
     renderRules();
+  });
+
+  // 监听页面可见性变化：标签页切至后台时自动暂停轮询，切回前台时即刻唤醒刷新并重启调度
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      stopPolling();
+    } else {
+      if (state.token) {
+        loadStatus();
+        if (state.activeTab === "logs") {
+          loadLogs();
+        }
+        startPolling();
+      }
+    }
   });
 });
