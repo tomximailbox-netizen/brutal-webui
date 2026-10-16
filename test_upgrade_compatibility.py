@@ -58,13 +58,13 @@ class TestUpgradeCompatibility(unittest.TestCase):
         self.assertFalse(app.auth.verify_password("WrongPassword"))
 
         # 4. 验证新增的 webui 轮询和缓存配置自动应用默认值，程序不抛异常
-        self.assertEqual(app.poll_interval_seconds, 5)
-        self.assertEqual(app.brutal.cache_ttl_seconds, 3.0)
+        self.assertEqual(app.poll_interval_seconds, 10)
+        self.assertEqual(app.brutal.cache_ttl_seconds, 8.0)
 
         # 5. 验证新增的 webui 结构被安全补齐
         self.assertIn("webui", app.config)
-        self.assertEqual(app.config["webui"]["poll_interval_seconds"], 5)
-        self.assertEqual(app.config["webui"]["status_cache_ttl_seconds"], 3)
+        self.assertEqual(app.config["webui"]["poll_interval_seconds"], 10)
+        self.assertEqual(app.config["webui"]["status_cache_ttl_seconds"], 8)
 
         # 6. 验证 disk 文件中已经平滑补全，且原有密码绝对未被篡改
         with open(self.old_config_path, "r", encoding="utf-8") as f:
@@ -95,7 +95,7 @@ class TestUpgradeCompatibility(unittest.TestCase):
         body = json.loads(b"".join(resp).decode("utf-8"))
 
         self.assertIn("200 OK", status_box[0])
-        self.assertEqual(body.get("poll_interval_seconds"), 5)
+        self.assertEqual(body.get("poll_interval_seconds"), 10)
         self.assertIn("rule_count", body)
 
 

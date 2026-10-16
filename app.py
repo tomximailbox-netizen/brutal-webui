@@ -50,8 +50,8 @@ class BrutalWebApp:
 
         brutal_conf = self.config.get("brutal", {})
         webui_conf = self.config.get("webui", {})
-        self.poll_interval_seconds = int(webui_conf.get("poll_interval_seconds", 5))
-        status_cache_ttl = float(webui_conf.get("status_cache_ttl_seconds", 3))
+        self.poll_interval_seconds = int(webui_conf.get("poll_interval_seconds", 10))
+        status_cache_ttl = float(webui_conf.get("status_cache_ttl_seconds", 8))
 
         self.brutal = BrutalWrapper(
             brutalctl_bin=brutal_conf.get("brutalctl_bin", "brutalctl"),
@@ -114,7 +114,7 @@ class BrutalWebApp:
                 "sync_script_path": "./brutal_sync.sh"
             },
             "sync_scheduler": {"enabled": True, "interval_seconds": 600, "startup_sync_delay": 5},
-            "webui": {"poll_interval_seconds": 5, "status_cache_ttl_seconds": 3},
+            "webui": {"poll_interval_seconds": 10, "status_cache_ttl_seconds": 8},
             "ssl": {"enabled": False, "cert_file": "./cert.pem", "key_file": "./key.pem"}
         }
 
@@ -586,8 +586,8 @@ class BrutalWebApp:
             safe_conf["auth"]["admin_password"] = "******"
         if "webui" not in safe_conf:
             safe_conf["webui"] = {
-                "poll_interval_seconds": 5,
-                "status_cache_ttl_seconds": 3
+                "poll_interval_seconds": 10,
+                "status_cache_ttl_seconds": 8
             }
         return self.json_response(safe_conf, start_response)
 

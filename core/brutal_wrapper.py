@@ -43,9 +43,9 @@ def validate_ip_cidr(ip_str: str, for_delete: bool = False) -> str:
 class BrutalWrapper:
     """包装系统 brutalctl 命令行工具，支持真实执行与本地 Mock 内存仿真"""
 
-    def __init__(self, brutalctl_bin: str = "brutalctl", mock_mode: bool = False, cache_ttl_seconds: float = 3.0):
+    def __init__(self, brutalctl_bin: str = "brutalctl", mock_mode: bool = False, cache_ttl_seconds: float = 8.0):
         self.brutalctl_bin = brutalctl_bin
-        self.cache_ttl_seconds = float(cache_ttl_seconds) if cache_ttl_seconds is not None else 3.0
+        self.cache_ttl_seconds = float(cache_ttl_seconds) if cache_ttl_seconds is not None else 8.0
 
         # 查询结果防抖短时缓存
         self._cache_lock = threading.Lock()

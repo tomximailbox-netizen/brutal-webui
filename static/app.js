@@ -8,7 +8,7 @@ const state = {
   activeTab: "rules",
   isSyncing: false,
   isLoggedOut: false,
-  pollIntervalSeconds: 5,
+  pollIntervalSeconds: 10,
   pollTimer: null
 };
 
@@ -142,7 +142,7 @@ async function loadStatus() {
 
     // 记录轮询间隔
     if (data.poll_interval_seconds) {
-      state.pollIntervalSeconds = Number(data.poll_interval_seconds) || 5;
+      state.pollIntervalSeconds = Number(data.poll_interval_seconds) || 10;
     }
 
     // 统计指标
@@ -531,11 +531,11 @@ async function loadSettings() {
     // WebUI 轮询刷新与内核缓存设置
     const pollInput = document.getElementById("setting-poll-interval");
     if (pollInput) {
-      pollInput.value = data.webui?.poll_interval_seconds || 5;
+      pollInput.value = data.webui?.poll_interval_seconds || 10;
     }
     const cacheInput = document.getElementById("setting-cache-ttl");
     if (cacheInput) {
-      cacheInput.value = data.webui?.status_cache_ttl_seconds ?? 3;
+      cacheInput.value = data.webui?.status_cache_ttl_seconds ?? 8;
     }
   } catch (e) {}
 }
@@ -546,8 +546,8 @@ async function handleSaveSettings() {
   const enabled = document.getElementById("setting-scheduler-enabled").checked;
   const newPwd = document.getElementById("setting-new-password").value.trim();
 
-  const pollInterval = Number(document.getElementById("setting-poll-interval")?.value) || 5;
-  const cacheTtl = Number(document.getElementById("setting-cache-ttl")?.value) ?? 3;
+  const pollInterval = Number(document.getElementById("setting-poll-interval")?.value) || 10;
+  const cacheTtl = Number(document.getElementById("setting-cache-ttl")?.value) ?? 8;
 
   const payload = {
     sync_scheduler: {
@@ -590,7 +590,7 @@ function scheduleNextPoll() {
     return;
   }
 
-  const intervalMs = Math.max(1000, (Number(state.pollIntervalSeconds) || 5) * 1000);
+  const intervalMs = Math.max(1000, (Number(state.pollIntervalSeconds) || 10) * 1000);
   state.pollTimer = setTimeout(async () => {
     try {
       if (!document.hidden && !state.isLoggedOut) {

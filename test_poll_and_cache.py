@@ -71,8 +71,8 @@ class TestWebUIPollAndCacheApi(unittest.TestCase):
             },
             "sync_scheduler": {"enabled": False, "interval_seconds": 600},
             "webui": {
-                "poll_interval_seconds": 5,
-                "status_cache_ttl_seconds": 3
+                "poll_interval_seconds": 10,
+                "status_cache_ttl_seconds": 8
             }
         }
         with open(self.temp_config_path, "w", encoding="utf-8") as f:
@@ -139,15 +139,15 @@ class TestWebUIPollAndCacheApi(unittest.TestCase):
         res = self.make_request("GET", "/api/status")
         self.assertIn("200 OK", res["status"])
         self.assertIn("poll_interval_seconds", res["json"])
-        self.assertEqual(res["json"]["poll_interval_seconds"], 5)
+        self.assertEqual(res["json"]["poll_interval_seconds"], 10)
 
     def test_config_get_and_update_webui(self):
         # 1. 查询初始配置
         res = self.make_request("GET", "/api/config")
         self.assertIn("200 OK", res["status"])
         self.assertIn("webui", res["json"])
-        self.assertEqual(res["json"]["webui"].get("poll_interval_seconds"), 5)
-        self.assertEqual(res["json"]["webui"].get("status_cache_ttl_seconds"), 3)
+        self.assertEqual(res["json"]["webui"].get("poll_interval_seconds"), 10)
+        self.assertEqual(res["json"]["webui"].get("status_cache_ttl_seconds"), 8)
 
         # 2. 修改配置
         update_payload = {

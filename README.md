@@ -187,8 +187,8 @@ sudo ./deploy.sh
     "startup_sync_delay": 5            // 服务启动/重启后首次同步延迟 (秒)，开机快速自愈控速
   },
   "webui": {
-    "poll_interval_seconds": 5,        // 控制台前台状态轮询刷新间隔 (秒，切后台自动挂起防空转)
-    "status_cache_ttl_seconds": 3      // 后端 brutalctl 查询防抖缓存时长 (秒，规则增删时自动瞬时失效)
+    "poll_interval_seconds": 10,       // 控制台前台状态轮询刷新间隔 (秒，切后台自动挂起防空转)
+    "status_cache_ttl_seconds": 8      // 后端 brutalctl 查询防抖缓存时长 (秒，规则增删时自动瞬时失效)
   },
   "ssl": {
     "enabled": false,                  // 是否启用 Python 原生 HTTPS
