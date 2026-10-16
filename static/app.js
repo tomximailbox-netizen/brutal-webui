@@ -11,7 +11,8 @@ const state = {
   isLoggedOut: false,
   pollEnabled: savedPollEnabled !== null ? savedPollEnabled === "true" : true,
   pollIntervalSeconds: 10,
-  pollTimer: null
+  pollTimer: null,
+  editingRule: null
 };
 
 // --- Toast 弹窗 ---
@@ -131,6 +132,14 @@ async function loadStatus() {
     } else {
       modeBadge.className = "px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5";
       modeBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>${t("status_normal")}`;
+    }
+
+    // 更新版本号显示
+    if (data.version) {
+      const versionBadge = document.getElementById("app-version-badge");
+      if (versionBadge) versionBadge.textContent = data.version;
+      const versionFooter = document.getElementById("app-version-footer");
+      if (versionFooter) versionFooter.textContent = data.version;
     }
 
     // 记录并更新客户端 IP
@@ -330,6 +339,9 @@ function renderRules() {
             ${t("btn_save_to_list")}
           </button>
         ` : ''}
+        <button onclick="openEditRateModal('${r.destination}', ${r.rate_mbps}, '${r.source}', '${(r.domain || '').replace(/'/g, "\\'")}')" class="px-2 py-1 text-xs text-indigo-300 hover:text-white hover:bg-indigo-600 rounded-lg transition border border-indigo-500/30 mr-1.5" title="${t('btn_edit_rate')}">
+          ${t("btn_edit_rate")}
+        </button>
         <button onclick="confirmDelRule('${r.destination}')" class="px-2.5 py-1 text-xs text-rose-400 hover:text-white hover:bg-rose-600 rounded-lg transition border border-rose-500/30">
           ${t("btn_delete")}
         </button>
@@ -371,6 +383,94 @@ function fillClientIp() {
 
 function setPresetRate(rate) {
   document.getElementById("add-rule-rate").value = rate;
+}
+
+// --- 修改规则限速弹窗 ---
+function openEditRateModal(destination, currentRate, source, domain = "") {
+  state.editingRule = { destination, rate: currentRate, source, domain };
+  const modal = document.getElementById("edit-rate-modal");
+  const destEl = document.getElementById("edit-rule-dest");
+  const badgeEl = document.getElementById("edit-rule-source-badge");
+  const domainRow = document.getElementById("edit-rule-domain-row");
+  const domainEl = document.getElementById("edit-rule-domain");
+  const rateInput = document.getElementById("edit-rule-rate");
+
+  if (!modal || !destEl || !rateInput) return;
+
+  destEl.textContent = destination;
+  rateInput.value = currentRate || 100;
+
+  // 渲染归属徽章
+  if (badgeEl) {
+    if (source === 'static') {
+      badgeEl.className = "px-2 py-0.5 rounded-full font-sans text-[11px] font-normal bg-indigo-500/20 text-indigo-300 border border-indigo-500/30";
+      badgeEl.textContent = t("badge_static");
+    } else if (source === 'manual') {
+      badgeEl.className = "px-2 py-0.5 rounded-full font-sans text-[11px] font-normal bg-amber-500/20 text-amber-300 border border-amber-500/30";
+      badgeEl.textContent = t("badge_manual");
+    } else {
+      badgeEl.className = "px-2 py-0.5 rounded-full font-sans text-[11px] font-normal bg-cyan-500/20 text-cyan-300 border border-cyan-500/30";
+      badgeEl.textContent = t("badge_domain");
+    }
+  }
+
+  // 渲染关联域名行
+  if (domainRow && domainEl) {
+    if (domain) {
+      domainRow.classList.remove("hidden");
+      domainEl.textContent = domain;
+    } else {
+      domainRow.classList.add("hidden");
+      domainEl.textContent = "";
+    }
+  }
+
+  modal.classList.remove("hidden");
+  rateInput.focus();
+  rateInput.select();
+}
+
+function closeEditRateModal() {
+  const modal = document.getElementById("edit-rate-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+  state.editingRule = null;
+}
+
+function setEditPresetRate(rate) {
+  const rateInput = document.getElementById("edit-rule-rate");
+  if (rateInput) {
+    rateInput.value = rate;
+  }
+}
+
+async function handleSaveEditedRate() {
+  if (!state.editingRule) return;
+
+  const rateInput = document.getElementById("edit-rule-rate");
+  const rate = Number(rateInput?.value);
+  if (!rate || rate <= 0) {
+    showToast(t("toast_invalid_rate") || "请输入大于 0 的有效速率", "error");
+    rateInput?.focus();
+    return;
+  }
+
+  const payload = {
+    ip: state.editingRule.destination,
+    rate: rate,
+    source: state.editingRule.source,
+    domain: state.editingRule.domain || ""
+  };
+
+  try {
+    const res = await apiCall("/api/rules", "PUT", payload);
+    showToast(res.msg || "速率更新成功", "success");
+    closeEditRateModal();
+    // 静默刷新规则列表并更新顶部状态指标
+    loadRules(true);
+    loadStatus();
+  } catch (err) {}
 }
 
 async function handleAddRule() {

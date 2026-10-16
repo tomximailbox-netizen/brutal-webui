@@ -37,6 +37,7 @@
         <div>
           <h1 class="text-base font-bold text-white tracking-tight flex items-center gap-2">
             <span data-i18n="app_title">Brutal 流量控制面板</span>
+            <span id="app-version-badge" class="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-800/80 text-slate-400 border border-slate-700/60 select-none">v2026.10.16</span>
             <span id="mode-badge" class="px-2 py-0.5 text-xs font-normal rounded-full bg-slate-800 text-slate-400" data-i18n="status_detecting">检测中...</span>
           </h1>
           <p class="text-xs text-slate-400" data-i18n="app_subtitle">Linux TCP 拥塞控制 / brutalctl IP 规则实时管理器</p>
@@ -396,6 +397,19 @@
 
   </main>
 
+  <!-- 页脚 Footer -->
+  <footer class="mt-auto py-6 border-t border-slate-900/80 bg-slate-950/60 text-slate-500 text-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div class="flex items-center gap-2 font-mono">
+        <span class="text-slate-400 font-semibold">Brutal WebUI</span>
+        <span id="app-version-footer" class="px-1.5 py-0.5 rounded text-[10px] bg-slate-900 border border-slate-800 text-slate-400">v2026.10.16</span>
+      </div>
+      <div class="text-[11px] text-slate-600">
+        Linux TCP 拥塞控制 / brutalctl 规则实时管理器
+      </div>
+    </div>
+  </footer>
+
   <!-- 添加规则弹窗 Modal -->
   <div id="add-rule-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
     <div class="glass-panel p-6 rounded-2xl w-full max-w-md border border-slate-700 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
@@ -434,6 +448,52 @@
       <div class="flex justify-end gap-2 pt-2">
         <button onclick="showAddRuleModal(false)" class="px-4 py-2 rounded-xl text-xs bg-slate-800 hover:bg-slate-700 text-slate-300" data-i18n="btn_cancel">取消</button>
         <button onclick="handleAddRule()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20" data-i18n="btn_confirm_add">确认添加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 修改规则速率弹窗 Modal -->
+  <div id="edit-rate-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
+    <div class="glass-panel p-6 rounded-2xl w-full max-w-md border border-slate-700 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-bold text-white" data-i18n="modal_edit_rate_title">修改限速速率</h3>
+        <button onclick="closeEditRateModal()" class="text-slate-400 hover:text-white">&times;</button>
+      </div>
+
+      <div class="space-y-3">
+        <div class="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-slate-400" data-i18n="modal_edit_rate_target">目标地址:</span>
+            <span id="edit-rule-dest" class="text-xs font-mono font-semibold text-indigo-300"></span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-slate-400" data-i18n="modal_edit_rate_source">规则归属:</span>
+            <span id="edit-rule-source-badge"></span>
+          </div>
+          <div id="edit-rule-domain-row" class="hidden flex items-center justify-between pt-1 border-t border-slate-800/80">
+            <span class="text-xs text-slate-400" data-i18n="modal_edit_rate_domain">关联域名:</span>
+            <span id="edit-rule-domain" class="text-xs font-sans text-cyan-300 font-medium"></span>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1" data-i18n="modal_edit_rate_label">新限速速率 (Mbps)</label>
+          <input id="edit-rule-rate" type="number" min="1" value="100" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono">
+
+          <div class="flex gap-1.5 mt-2">
+            <button onclick="setEditPresetRate(50)" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">50M</button>
+            <button onclick="setEditPresetRate(100)" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">100M</button>
+            <button onclick="setEditPresetRate(200)" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">200M</button>
+            <button onclick="setEditPresetRate(500)" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">500M</button>
+            <button onclick="setEditPresetRate(1000)" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300">1000M</button>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-2" data-i18n="modal_edit_rate_desc">修改将立即在内核生效，并自动持久化保存到对应清单文件中。</p>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeEditRateModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-800 hover:bg-slate-700 text-slate-300" data-i18n="btn_cancel">取消</button>
+        <button onclick="handleSaveEditedRate()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20" data-i18n="btn_confirm_save">保存并应用</button>
       </div>
     </div>
   </div>

@@ -317,5 +317,82 @@ class TestServerStartup(unittest.TestCase):
 
 
 
+class TestSetDomainAndIpRate(unittest.TestCase):
+    def test_domain_manager_set_rate(self):
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as tf:
+            tf.write("# 头部注释\ngoogle.com\ncloudflare.com 100 # 原有注释\n\ngithub.com 50\n")
+            tf_path = tf.name
+
+        dm = DomainManager(tf_path)
+        try:
+            # 1. 成功更新无速率域名
+            ok, msg = dm.set_domain_rate("google.com", 200)
+            self.assertTrue(ok)
+            rates = dm.get_effective_domains_with_rates()
+            self.assertEqual(rates["google.com"], 200.0)
+
+            # 2. 成功更新已有速率域名并保留行尾注释
+            ok, msg = dm.set_domain_rate("cloudflare.com", 300)
+            self.assertTrue(ok)
+            rates = dm.get_effective_domains_with_rates()
+            self.assertEqual(rates["cloudflare.com"], 300.0)
+
+            # 验证源文本保留注释和格式
+            content = dm.get_raw_content()
+            self.assertIn("# 头部注释", content)
+            self.assertIn("# 原有注释", content)
+            self.assertIn("cloudflare.com 300 # 原有注释", content)
+
+            # 3. 域名不存在拦截
+            ok, msg = dm.set_domain_rate("notfound.com", 100)
+            self.assertFalse(ok)
+            self.assertIn("不存在", msg)
+
+            # 4. 非法数值拦截
+            ok, _ = dm.set_domain_rate("google.com", 0)
+            self.assertFalse(ok)
+            ok, _ = dm.set_domain_rate("google.com", -50)
+            self.assertFalse(ok)
+        finally:
+            if os.path.exists(tf_path):
+                os.remove(tf_path)
+
+    def test_ip_manager_set_rate(self):
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as tf:
+            tf.write("10.0.0.1\n172.16.55.1/32 100 # 静态1\n2001:db8::1 80\n")
+            tf_path = tf.name
+
+        im = IpManager(tf_path)
+        try:
+            # 1. 成功更新 IPv4
+            ok, msg = im.set_ip_rate("10.0.0.1", 220)
+            self.assertTrue(ok)
+            rates = im.get_effective_ips_with_rates()
+            self.assertEqual(rates["10.0.0.1/32"], 220.0)
+
+            # 2. 成功更新带注释的 CIDR
+            ok, msg = im.set_ip_rate("172.16.55.1/32", 330)
+            self.assertTrue(ok)
+            content = im.get_raw_content()
+            self.assertIn("172.16.55.1/32 330 # 静态1", content)
+
+            # 3. 成功更新 IPv6
+            ok, msg = im.set_ip_rate("2001:db8::1", 440)
+            self.assertTrue(ok)
+            rates = im.get_effective_ips_with_rates()
+            self.assertEqual(rates["2001:db8::1/128"], 440.0)
+
+            # 4. 目标不存在拦截
+            ok, msg = im.set_ip_rate("192.168.1.1", 100)
+            self.assertFalse(ok)
+
+            # 5. 非法数值拦截
+            ok, _ = im.set_ip_rate("10.0.0.1", -10)
+            self.assertFalse(ok)
+        finally:
+            if os.path.exists(tf_path):
+                os.remove(tf_path)
+
+
 if __name__ == '__main__':
     unittest.main()

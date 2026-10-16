@@ -140,6 +140,14 @@ const I18N_RESOURCES = {
       modal_add_rate_label: "Speed Rate (Mbps)",
       btn_cancel: "Cancel",
       btn_confirm_add: "Confirm Add",
+      btn_edit_rate: "Edit Rate",
+      modal_edit_rate_title: "Modify Speed Rate",
+      modal_edit_rate_target: "Target Destination:",
+      modal_edit_rate_source: "Rule Source:",
+      modal_edit_rate_domain: "Source Domain:",
+      modal_edit_rate_label: "New Speed Rate (Mbps)",
+      modal_edit_rate_desc: "The new rate will take effect immediately and be saved to the corresponding list file.",
+      btn_confirm_save: "Save & Apply",
 
       // 登录弹窗
       modal_login_title: "Admin Authentication",
@@ -164,7 +172,8 @@ const I18N_RESOURCES = {
       toast_sync_triggered: "Sync task started",
       toast_config_updated: "Configuration updated successfully",
       toast_net_error: "Network connection error",
-      toast_empty_ip: "Please enter an IP or CIDR"
+      toast_empty_ip: "Please enter an IP or CIDR",
+      toast_invalid_rate: "Please enter a valid rate greater than 0"
     }
   },
 
@@ -291,6 +300,14 @@ const I18N_RESOURCES = {
       modal_add_rate_label: "限速速率 (Mbps)",
       btn_cancel: "取消",
       btn_confirm_add: "确认添加",
+      btn_edit_rate: "修改速率",
+      modal_edit_rate_title: "修改限速速率",
+      modal_edit_rate_target: "目标地址:",
+      modal_edit_rate_source: "规则归属:",
+      modal_edit_rate_domain: "关联域名:",
+      modal_edit_rate_label: "新限速速率 (Mbps)",
+      modal_edit_rate_desc: "修改将立即在内核生效，并自动持久化保存到对应清单文件中。",
+      btn_confirm_save: "保存并应用",
 
       modal_login_title: "管理员身份验证",
       modal_login_desc: "请输入配置的管理密码以解锁控制面板",
@@ -313,7 +330,8 @@ const I18N_RESOURCES = {
       toast_sync_triggered: "同步任务已触发",
       toast_config_updated: "配置已更新",
       toast_net_error: "网络连接异常",
-      toast_empty_ip: "请输入待检测的 IP 或 CIDR"
+      toast_empty_ip: "请输入待检测的 IP 或 CIDR",
+      toast_invalid_rate: "请输入大于 0 的有效速率"
     }
   },
 
@@ -440,6 +458,14 @@ const I18N_RESOURCES = {
       modal_add_rate_label: "限速速率 (Mbps)",
       btn_cancel: "取消",
       btn_confirm_add: "確認新增",
+      btn_edit_rate: "修改速率",
+      modal_edit_rate_title: "修改限速速率",
+      modal_edit_rate_target: "目標地址:",
+      modal_edit_rate_source: "規則歸屬:",
+      modal_edit_rate_domain: "關聯網域:",
+      modal_edit_rate_label: "新限速速率 (Mbps)",
+      modal_edit_rate_desc: "修改將立即在核心生效，並自動持久化儲存到對應清單檔案中。",
+      btn_confirm_save: "儲存並套用",
 
       modal_login_title: "管理員身分驗證",
       modal_login_desc: "請輸入設定的管理密碼以解鎖控制面板",
@@ -462,7 +488,8 @@ const I18N_RESOURCES = {
       toast_sync_triggered: "同步任務已觸發",
       toast_config_updated: "設定已更新",
       toast_net_error: "網路連線異常",
-      toast_empty_ip: "請輸入待檢測的 IP 或 CIDR"
+      toast_empty_ip: "請輸入待檢測的 IP 或 CIDR",
+      toast_invalid_rate: "請輸入大於 0 的有效速率"
     }
   }
 };

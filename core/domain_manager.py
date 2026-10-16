@@ -145,6 +145,61 @@ class DomainManager:
         except Exception as e:
             return False, f"保存失败: {str(e)}", 0
 
+    def set_domain_rate(self, domain: str, rate: float) -> Tuple[bool, str]:
+        """
+        修改指定域名的限速速率，并原子化持久化到 brut_domain.txt 文件中。
+        保留文件中原有的注释、空行与格式。
+        """
+        clean_domain = domain.strip().lower()
+        if not clean_domain:
+            return False, "域名不能为空"
+        try:
+            parsed_rate = float(rate)
+            if parsed_rate <= 0:
+                return False, "速率必须大于 0 Mbps"
+        except (ValueError, TypeError):
+            return False, "无效的速率数值"
+
+        rate_str = str(int(parsed_rate)) if parsed_rate.is_integer() else str(parsed_rate)
+
+        raw = self.get_raw_content()
+        lines = raw.splitlines()
+        found = False
+        new_lines = []
+
+        for line in lines:
+            stripped = line.strip()
+            # 空行或纯注释行直接保留
+            if not stripped or stripped.startswith("#"):
+                new_lines.append(line)
+                continue
+
+            # 分离配置代码与行尾注释
+            code_part, *comment_parts = line.split("#", 1)
+            comment_part = comment_parts[0] if comment_parts else None
+
+            tokens = code_part.strip().split()
+            if tokens and tokens[0].lower() == clean_domain:
+                found = True
+                new_line = f"{tokens[0]} {rate_str}"
+                if comment_part is not None:
+                    new_line += f" #{comment_part}"
+                new_lines.append(new_line)
+            else:
+                new_lines.append(line)
+
+        if not found:
+            return False, f"域名 [{domain}] 不存在于域名清单中"
+
+        new_content = "\n".join(new_lines)
+        if raw.endswith("\n") or not raw:
+            new_content += "\n"
+
+        success, msg, _ = self.save_content(new_content)
+        if success:
+            return True, f"域名 [{domain}] 速率已成功更新为 {rate_str} Mbps"
+        return False, msg
+
     @staticmethod
     def test_resolve(domain: str) -> Dict[str, Any]:
         """测试指定域名在当前系统的 IPv4 与 IPv6 解析结果"""

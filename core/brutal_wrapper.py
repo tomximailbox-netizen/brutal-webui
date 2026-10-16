@@ -238,6 +238,8 @@ class BrutalWrapper:
 
         if is_manual:
             self._manual_ips.add(valid_ip)
+        else:
+            self._manual_ips.discard(valid_ip)
 
         self.invalidate_cache()
 

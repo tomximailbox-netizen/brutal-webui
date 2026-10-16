@@ -100,10 +100,12 @@ class TestApiIntegration(unittest.TestCase):
         self.assertIn(b"domains-editor", res_auth_index["data"])
         self.assertIn(b"static-ips-editor", res_auth_index["data"])
 
-        # 5. 带 Token 访问 /api/status，验证 client_ip 返回
+        # 5. 带 Token 访问 /api/status，验证 client_ip 与 version 返回
         res = self.make_request("GET", "/api/status", token=token, extra_headers={"REMOTE_ADDR": "203.0.113.19"})
         self.assertIn("200 OK", res["status"])
         self.assertIn("rule_count", res["json"])
+        self.assertIn("version", res["json"])
+        self.assertTrue(res["json"]["version"].startswith("v"))
         self.assertEqual(res["json"].get("client_ip"), "203.0.113.19")
 
         # 5.1 验证 X-Forwarded-For 代理下提取最左侧客户端真实 IP
@@ -265,6 +267,78 @@ class TestApiIntegration(unittest.TestCase):
         # 同一 /64 子网的全新地址访问即被 429 锁定拦截
         res_blocked = self.make_request("POST", "/api/login", body={"password": "any"}, extra_headers={"REMOTE_ADDR": v6_new})
         self.assertIn("429", res_blocked["status"])
+
+    def test_update_rule_rate_api(self):
+        # 1. 未登录拦截
+        res_unauth = self.make_request("PUT", "/api/rules", body={"ip": "1.1.1.1", "rate": 200})
+        self.assertIn("401", res_unauth["status"])
+
+        token = self.app.auth.create_token()
+
+        # 2. 非法入参拦截
+        res_bad_rate = self.make_request("PUT", "/api/rules", body={"ip": "1.1.1.1", "rate": -10}, token=token)
+        self.assertIn("400", res_bad_rate["status"])
+        res_bad_ip = self.make_request("PUT", "/api/rules", body={"ip": "999.999.999.999", "rate": 100}, token=token)
+        self.assertIn("400", res_bad_ip["status"])
+
+        # 3. 修改静态 IP 规则速率
+        orig_ip_content = self.app.ip_mgr.get_raw_content()
+        self.app.ip_mgr.save_content("10.0.0.1 50\n172.16.55.1/32 100\n")
+        try:
+            res_static = self.make_request(
+                "PUT", "/api/rules",
+                body={"ip": "10.0.0.1", "rate": 250, "source": "static"},
+                token=token
+            )
+            self.assertIn("200 OK", res_static["status"])
+            self.assertEqual(res_static["json"]["source"], "static")
+            # 验证持久化清单更新
+            updated_ips = self.app.ip_mgr.get_effective_ips_with_rates()
+            self.assertEqual(updated_ips.get("10.0.0.1/32"), 250.0)
+        finally:
+            self.app.ip_mgr.save_content(orig_ip_content)
+
+        # 4. 修改域名解析 IP 规则速率
+        orig_dom_content = self.app.domain_mgr.get_raw_content()
+        self.app.domain_mgr.save_content("mytest.com 80\n")
+        try:
+            # 建立 domain_ip 映射
+            self.app.domain_mgr.set_mock_ip_mapping({"192.0.2.1": "mytest.com", "2001:db8::1": "mytest.com"})
+            self.app.brutal.add_rule("192.0.2.1", 80, is_manual=False)
+            self.app.brutal.add_rule("2001:db8::1", 80, is_manual=False)
+
+            res_domain = self.make_request(
+                "PUT", "/api/rules",
+                body={"ip": "192.0.2.1", "rate": 350, "source": "domain", "domain": "mytest.com"},
+                token=token
+            )
+            self.assertIn("200 OK", res_domain["status"])
+            self.assertEqual(res_domain["json"]["domain"], "mytest.com")
+
+            # 验证清单文件持久化更新
+            rates = self.app.domain_mgr.get_effective_domains_with_rates()
+            self.assertEqual(rates.get("mytest.com"), 350.0)
+
+            # 验证关联 IP 的内核规则速率均已更新
+            rules = self.app.brutal.list_rules()
+            rule_map = {r["destination"]: r["rate_mbps"] for r in rules}
+            self.assertEqual(rule_map.get("192.0.2.1/32"), 350.0)
+            self.assertEqual(rule_map.get("2001:db8::1/128"), 350.0)
+        finally:
+            self.app.domain_mgr.save_content(orig_dom_content)
+
+        # 5. 修改临时规则速率
+        self.app.brutal.add_rule("198.51.100.1", 100, is_manual=True)
+        res_manual = self.make_request(
+            "PUT", "/api/rules",
+            body={"ip": "198.51.100.1", "rate": 450, "source": "manual"},
+            token=token
+        )
+        self.assertIn("200 OK", res_manual["status"])
+        self.assertEqual(res_manual["json"]["source"], "manual")
+        rules = self.app.brutal.list_rules()
+        rule_map = {r["destination"]: r["rate_mbps"] for r in rules}
+        self.assertEqual(rule_map.get("198.51.100.1/32"), 450.0)
 
 
 if __name__ == "__main__":

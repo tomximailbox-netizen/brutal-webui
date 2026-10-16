@@ -122,6 +122,69 @@ class IpManager:
             return True, f"规则 [{valid_ip}] 已成功存入静态 IP 清单"
         return False, msg
 
+    def set_ip_rate(self, ip_or_cidr: str, rate: float) -> Tuple[bool, str]:
+        """
+        修改已存在于 brut_ip.txt 中的静态 IP/CIDR 速率，并原子化持久化保存。
+        完整保留原有行内注释，规范化匹配目标 IP。
+        """
+        try:
+            valid_target = validate_ip_cidr(ip_or_cidr, for_delete=False)
+            parsed_rate = float(rate)
+            if parsed_rate <= 0:
+                return False, "速率必须大于 0 Mbps"
+        except ValueError as e:
+            return False, str(e)
+        except (TypeError, Exception):
+            return False, "无效的速率数值"
+
+        rate_str = str(int(parsed_rate)) if parsed_rate.is_integer() else str(parsed_rate)
+
+        raw = self.get_raw_content()
+        lines = raw.splitlines()
+        found = False
+        new_lines = []
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                new_lines.append(line)
+                continue
+
+            code_part, *comment_parts = line.split("#", 1)
+            comment_part = comment_parts[0] if comment_parts else None
+
+            tokens = code_part.strip().split()
+            if not tokens:
+                new_lines.append(line)
+                continue
+
+            try:
+                line_valid_ip = validate_ip_cidr(tokens[0], for_delete=False)
+            except ValueError:
+                new_lines.append(line)
+                continue
+
+            if line_valid_ip == valid_target:
+                found = True
+                new_line = f"{tokens[0]} {rate_str}"
+                if comment_part is not None:
+                    new_line += f" #{comment_part}"
+                new_lines.append(new_line)
+            else:
+                new_lines.append(line)
+
+        if not found:
+            return False, f"IP 规则 [{valid_target}] 不存在于静态清单中"
+
+        new_content = "\n".join(new_lines)
+        if raw.endswith("\n") or not raw:
+            new_content += "\n"
+
+        success, msg, _ = self.save_content(new_content)
+        if success:
+            return True, f"静态规则 [{valid_target}] 速率已成功更新为 {rate_str} Mbps"
+        return False, msg
+
     @staticmethod
     def test_ip_format(ip_str: str) -> Dict[str, Any]:
         """测试指定 IP/CIDR 格式是否有效及版本归属"""

@@ -9,14 +9,15 @@ from wsgiref.simple_server import make_server, WSGIServer, WSGIRequestHandler
 from urllib.parse import parse_qs, urlparse
 
 from core.auth import AuthManager
-from core.brutal_wrapper import BrutalWrapper
+from core.brutal_wrapper import BrutalWrapper, validate_ip_cidr
 from core.domain_manager import DomainManager
 from core.ip_manager import IpManager
 from core.sync_runner import SyncRunner
 
-# 基础目录
+# 基础目录与版本号 (基于年月日 CalVer)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+APP_VERSION = "v2026.10.16"
 
 
 class ThreadedWSGIServer(socketserver.ThreadingMixIn, WSGIServer):
@@ -297,6 +298,8 @@ class BrutalWebApp:
                 return self.api_list_rules(start_response)
             elif method == "POST":
                 return self.api_add_rule(environ, start_response)
+            elif method == "PUT":
+                return self.api_update_rule(environ, start_response)
             elif method == "DELETE":
                 return self.api_del_rule(environ, start_response)
 
@@ -430,6 +433,7 @@ class BrutalWebApp:
         manual_count = sum(1 for r in rules if r.get("source") == "manual")
 
         return self.json_response({
+            "version": APP_VERSION,
             "is_mock": self.brutal.is_mock(),
             "client_ip": client_ip,
             "rule_count": len(rules),
@@ -464,6 +468,79 @@ class BrutalWebApp:
         if success:
             return self.json_response({"status": "ok", "msg": msg}, start_response)
         return self.json_response({"error": msg}, start_response, status="400 Bad Request")
+
+    def api_update_rule(self, environ, start_response):
+        body = self._parse_json_body(environ)
+        raw_ip = body.get("ip", "")
+        raw_rate = body.get("rate")
+        req_source = body.get("source")
+        req_domain = (body.get("domain") or "").strip()
+
+        # 1. 严格参数校验
+        try:
+            valid_ip = validate_ip_cidr(raw_ip, for_delete=False)
+            rate = float(raw_rate)
+            if rate <= 0:
+                return self.json_response({"error": "速率必须大于 0 Mbps"}, start_response, status="400 Bad Request")
+        except ValueError as e:
+            return self.json_response({"error": str(e)}, start_response, status="400 Bad Request")
+        except (TypeError, Exception):
+            return self.json_response({"error": "限速数值非法"}, start_response, status="400 Bad Request")
+
+        # 2. 来源判定与分流回写
+        static_ips = set(self.ip_mgr.get_effective_ips())
+        domain_ip_map = self.domain_mgr.get_cached_ip_to_domain_map()
+        dest_raw = valid_ip.split("/")[0]
+
+        target_domain = req_domain or domain_ip_map.get(valid_ip) or domain_ip_map.get(dest_raw)
+        effective_domains = [d.lower() for d in self.domain_mgr.get_effective_domains()]
+
+        if (req_source == "domain" or target_domain) and target_domain and (target_domain.lower() in effective_domains):
+            # 2.1 域名解析出来的 IP：保存到域名清单配置中，并更新内核流控
+            ok, msg = self.domain_mgr.set_domain_rate(target_domain, rate)
+            if not ok:
+                return self.json_response({"error": msg}, start_response, status="400 Bad Request")
+
+            # 更新当前目标 IP 速率 (非手动规则)
+            self.brutal.add_rule(valid_ip, rate, is_manual=False)
+
+            # 同步更新当前与该域名关联的其他生效 IP 规则
+            current_rules = self.brutal.list_rules(domain_ip_map=domain_ip_map)
+            for r in current_rules:
+                if r.get("domain", "").lower() == target_domain.lower():
+                    self.brutal.add_rule(r["destination"], rate, is_manual=False)
+
+            self.brutal.invalidate_cache()
+            return self.json_response({
+                "status": "ok",
+                "msg": f"已成功更新域名 [{target_domain}] 限速为 {rate} Mbps 并保存至域名清单",
+                "source": "domain",
+                "domain": target_domain
+            }, start_response)
+
+        elif req_source == "static" or (valid_ip in static_ips):
+            # 2.2 静态 IP：保存到静态 IP 清单配置中，并更新内核流控
+            ok, msg = self.ip_mgr.set_ip_rate(valid_ip, rate)
+            if not ok:
+                return self.json_response({"error": msg}, start_response, status="400 Bad Request")
+
+            self.brutal.add_rule(valid_ip, rate, is_manual=False)
+            self.brutal.invalidate_cache()
+            return self.json_response({
+                "status": "ok",
+                "msg": f"已成功更新静态规则 [{valid_ip}] 限速为 {rate} Mbps 并保存至静态 IP 清单",
+                "source": "static"
+            }, start_response)
+
+        else:
+            # 2.3 临时手动规则：更新内核/内存流控，保持临时规则属性
+            self.brutal.add_rule(valid_ip, rate, is_manual=True)
+            self.brutal.invalidate_cache()
+            return self.json_response({
+                "status": "ok",
+                "msg": f"已成功更新临时规则 [{valid_ip}] 限速为 {rate} Mbps",
+                "source": "manual"
+            }, start_response)
 
     def api_get_domains(self, start_response):
         raw = self.domain_mgr.get_raw_content()
