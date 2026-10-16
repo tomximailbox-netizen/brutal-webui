@@ -315,6 +315,19 @@ class TestServerStartup(unittest.TestCase):
         self.assertIsNotNone(server)
         server.server_close()
 
+    def test_annotations_evaluation(self):
+        # 强制评估类与方法的类型注解，确保 Python 3.8/3.9/3.10/3.11 下不会出现 NameError
+        import typing
+        from core.sync_runner import SyncRunner
+        from core.domain_manager import DomainManager
+        from core.dns_resolver import SimpleDnsResolver
+        hints_runner = typing.get_type_hints(SyncRunner.__init__)
+        self.assertIn("dns_servers", hints_runner)
+        hints_dm = typing.get_type_hints(DomainManager.__init__)
+        self.assertIn("dns_servers", hints_dm)
+        hints_dns = typing.get_type_hints(SimpleDnsResolver.__init__)
+        self.assertIn("servers", hints_dns)
+
 
 
 class TestSetDomainAndIpRate(unittest.TestCase):

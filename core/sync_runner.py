@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 
 
 class SyncRunner:

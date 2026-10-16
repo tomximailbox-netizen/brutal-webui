@@ -76,6 +76,15 @@ systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}.service"
 systemctl restart "${SERVICE_NAME}.service"
 
+# 检查服务健康状态
+sleep 1
+if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
+    echo "✅ 服务已成功启动并在后台运行！"
+else
+    echo "⚠️ 警告：服务未能正常启动，以下为 systemd 最新日志："
+    journalctl -u "${SERVICE_NAME}.service" -n 20 --no-pager || true
+fi
+
 echo
 echo "=================================================="
 if [ "$HAS_EXISTING" -eq 1 ]; then

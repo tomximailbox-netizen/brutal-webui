@@ -43,17 +43,18 @@ install_dependencies() {
     if [ ${#missing[@]} -gt 0 ]; then
         echo "正在自动安装缺失的系统依赖: ${missing[*]} ..."
         if command -v apt-get >/dev/null 2>&1; then
-            apt-get update -y && apt-get install -y "${missing[@]}"
+            apt-get update -y || true
+            apt-get install -y "${missing[@]}" || true
         elif command -v dnf >/dev/null 2>&1; then
-            dnf install -y "${missing[@]}"
+            dnf install -y "${missing[@]}" || true
         elif command -v yum >/dev/null 2>&1; then
-            yum install -y "${missing[@]}"
+            yum install -y "${missing[@]}" || true
         elif command -v apk >/dev/null 2>&1; then
-            apk add --no-cache "${missing[@]}"
+            apk add --no-cache "${missing[@]}" || true
         elif command -v pacman >/dev/null 2>&1; then
-            pacman -Sy --noconfirm "${missing[@]}"
+            pacman -Sy --noconfirm "${missing[@]}" || true
         elif command -v zypper >/dev/null 2>&1; then
-            zypper install -y "${missing[@]}"
+            zypper install -y "${missing[@]}" || true
         else
             echo "⚠️ 无法识别系统包管理器，请确保系统中已安装: ${missing[*]}"
         fi
