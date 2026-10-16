@@ -56,6 +56,7 @@ class BrutalWrapper:
         has_bin = shutil.which(self.brutalctl_bin) is not None
         is_posix = os.name == 'posix'
         self.mock_mode = mock_mode or (not is_posix) or (not has_bin)
+        self._last_mock_traffic_time = time.time()
 
         # 纯内存维护手动添加的规则（不落盘，重启自动失效）
         self._manual_ips = set()
@@ -133,6 +134,13 @@ class BrutalWrapper:
                 raw_rules = [dict(r) for r in self._cached_raw_rules]
             else:
                 if self.mock_mode:
+                    delta = now - getattr(self, "_last_mock_traffic_time", now)
+                    if delta > 0.5:
+                        self._last_mock_traffic_time = now
+                        for mr in self._mock_rules:
+                            rate = mr.get("rate_mbps", 50.0)
+                            inc = round((rate * delta * 0.001), 1)
+                            mr["sent_mb"] = round(mr.get("sent_mb", 0.0) + inc, 1)
                     raw_rules = [dict(r) for r in self._mock_rules]
                 else:
                     try:

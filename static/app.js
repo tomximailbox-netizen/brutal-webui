@@ -7,6 +7,7 @@ const state = {
   domainsContent: "",
   activeTab: "rules",
   isSyncing: false,
+  isLoggedOut: false,
   pollIntervalSeconds: 5,
   pollTimer: null
 };
@@ -80,6 +81,7 @@ async function apiCall(endpoint, method = "GET", data = null) {
 }
 
 async function handleLogout() {
+  state.isLoggedOut = true;
   stopPolling();
   try {
     await apiCall("/api/logout", "POST");
@@ -162,9 +164,11 @@ async function loadStatus() {
 }
 
 // --- 规则列表 (Rules) ---
-async function loadRules() {
+async function loadRules(silent = false) {
   const tbody = document.getElementById("rules-table-body");
-  tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-slate-400"><div class="inline-block animate-spin mr-2">⏳</div> ${t("loading_rules")}</td></tr>`;
+  if (!silent) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-slate-400"><div class="inline-block animate-spin mr-2">⏳</div> ${t("loading_rules")}</td></tr>`;
+  }
 
   try {
     const data = await apiCall("/api/rules");
@@ -172,8 +176,26 @@ async function loadRules() {
 
     state.rules = data.rules || [];
     renderRules();
+
+    // 联动即时更新顶部“累计发包数据量”和“生效规则数”
+    const totalSent = state.rules.reduce((acc, r) => acc + (Number(r.sent_mb) || 0), 0);
+    const metricSentMb = document.getElementById("metric-sent-mb");
+    if (metricSentMb) {
+      metricSentMb.textContent = totalSent.toFixed(1) + " MB";
+    }
+    const metricRulesCount = document.getElementById("metric-rules-count");
+    if (metricRulesCount) {
+      metricRulesCount.textContent = state.rules.length;
+    }
+
+    // 非静默手动刷新时，同步拉取最新状态指标
+    if (!silent) {
+      loadStatus();
+    }
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-rose-400">加载失败</td></tr>`;
+    if (!silent) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-rose-400">加载失败</td></tr>`;
+    }
   }
 }
 
@@ -563,17 +585,20 @@ function stopPolling() {
 
 function scheduleNextPoll() {
   stopPolling();
-  // 当页面处于后台标签页或用户未授权登录时，暂停心跳排期，彻底避免后台空转消耗
-  if (document.hidden || !state.token) {
+  // 当页面处于后台标签页或用户已登出时，暂停心跳排期，彻底避免后台空转消耗
+  if (document.hidden || state.isLoggedOut) {
     return;
   }
 
   const intervalMs = Math.max(1000, (Number(state.pollIntervalSeconds) || 5) * 1000);
   state.pollTimer = setTimeout(async () => {
     try {
-      if (!document.hidden && state.token) {
+      if (!document.hidden && !state.isLoggedOut) {
         await loadStatus();
-        if (state.activeTab === "logs") {
+        if (state.activeTab === "rules") {
+          // 当前停留在规则列表页时，自动静默刷新各规则及发包量，不引起页面抖动
+          await loadRules(true);
+        } else if (state.activeTab === "logs") {
           await loadLogs();
         }
       }
@@ -610,9 +635,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (document.hidden) {
       stopPolling();
     } else {
-      if (state.token) {
+      if (!state.isLoggedOut) {
         loadStatus();
-        if (state.activeTab === "logs") {
+        if (state.activeTab === "rules") {
+          loadRules(true);
+        } else if (state.activeTab === "logs") {
           loadLogs();
         }
         startPolling();
