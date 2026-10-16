@@ -145,6 +145,10 @@
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
             <span data-i18n="btn_save_all_manual">一键保存临时IP到清单</span> (<span id="manual-ips-badge">0</span>)
           </button>
+          <button id="btn-toggle-poll" onclick="toggleAutoPoll()" class="px-3 py-2 rounded-xl text-xs transition flex items-center gap-1.5 border border-slate-700 bg-slate-800 text-slate-300 hover:text-white" title="点击开启或暂停页面自动刷新">
+            <span id="poll-indicator-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span id="poll-toggle-text" data-i18n="auto_poll_on">自动刷新: 开启</span>
+          </button>
           <button onclick="loadRules()" class="px-3 py-2 rounded-xl text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 transition flex items-center gap-1.5 border border-slate-700">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             <span data-i18n="btn_refresh">刷新列表</span>
@@ -360,6 +364,17 @@
       <div class="glass-panel p-6 rounded-2xl space-y-5">
         <h3 class="text-sm font-bold text-white border-b border-slate-800 pb-3" data-i18n="settings_webui_title">控制台性能与轮询控制</h3>
         <div class="space-y-4">
+          <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+            <div>
+              <div class="text-xs font-semibold text-slate-200" data-i18n="settings_poll_enabled_label">启用前台自动轮询刷新</div>
+              <div class="text-xs text-slate-500 mt-0.5" data-i18n="settings_poll_enabled_desc">开启后页面前台活动时将按设定间隔定时自动静默拉取最新流量与规则状态</div>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="setting-poll-enabled" checked class="sr-only peer">
+              <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+            </label>
+          </div>
+
           <div class="space-y-2">
             <label class="block text-xs font-medium text-slate-400" data-i18n="settings_poll_interval_label">前台轮询刷新间隔 (秒)</label>
             <input id="setting-poll-interval" type="number" min="1" max="60" step="1" value="10" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono">

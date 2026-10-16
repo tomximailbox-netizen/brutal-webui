@@ -58,11 +58,13 @@ class TestUpgradeCompatibility(unittest.TestCase):
         self.assertFalse(app.auth.verify_password("WrongPassword"))
 
         # 4. 验证新增的 webui 轮询和缓存配置自动应用默认值，程序不抛异常
+        self.assertTrue(app.poll_enabled)
         self.assertEqual(app.poll_interval_seconds, 10)
         self.assertEqual(app.brutal.cache_ttl_seconds, 8.0)
 
         # 5. 验证新增的 webui 结构被安全补齐
         self.assertIn("webui", app.config)
+        self.assertTrue(app.config["webui"]["poll_enabled"])
         self.assertEqual(app.config["webui"]["poll_interval_seconds"], 10)
         self.assertEqual(app.config["webui"]["status_cache_ttl_seconds"], 8)
 
@@ -95,6 +97,7 @@ class TestUpgradeCompatibility(unittest.TestCase):
         body = json.loads(b"".join(resp).decode("utf-8"))
 
         self.assertIn("200 OK", status_box[0])
+        self.assertTrue(body.get("poll_enabled", True))
         self.assertEqual(body.get("poll_interval_seconds"), 10)
         self.assertIn("rule_count", body)
 

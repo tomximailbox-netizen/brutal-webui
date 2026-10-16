@@ -187,6 +187,7 @@ sudo ./deploy.sh
     "startup_sync_delay": 5            // 服务启动/重启后首次同步延迟 (秒)，开机快速自愈控速
   },
   "webui": {
+    "poll_enabled": true,              // 控制台前台是否启用自动刷新 (默认开启，可在页面上一键点击切换暂停/开启)
     "poll_interval_seconds": 10,       // 控制台前台状态轮询刷新间隔 (秒，切后台自动挂起防空转)
     "status_cache_ttl_seconds": 8      // 后端 brutalctl 查询防抖缓存时长 (秒，规则增删时自动瞬时失效)
   },

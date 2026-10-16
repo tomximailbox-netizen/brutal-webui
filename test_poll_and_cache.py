@@ -71,6 +71,7 @@ class TestWebUIPollAndCacheApi(unittest.TestCase):
             },
             "sync_scheduler": {"enabled": False, "interval_seconds": 600},
             "webui": {
+                "poll_enabled": True,
                 "poll_interval_seconds": 10,
                 "status_cache_ttl_seconds": 8
             }
@@ -140,18 +141,21 @@ class TestWebUIPollAndCacheApi(unittest.TestCase):
         self.assertIn("200 OK", res["status"])
         self.assertIn("poll_interval_seconds", res["json"])
         self.assertEqual(res["json"]["poll_interval_seconds"], 10)
+        self.assertTrue(res["json"].get("poll_enabled", True))
 
     def test_config_get_and_update_webui(self):
         # 1. 查询初始配置
         res = self.make_request("GET", "/api/config")
         self.assertIn("200 OK", res["status"])
         self.assertIn("webui", res["json"])
+        self.assertTrue(res["json"]["webui"].get("poll_enabled"))
         self.assertEqual(res["json"]["webui"].get("poll_interval_seconds"), 10)
         self.assertEqual(res["json"]["webui"].get("status_cache_ttl_seconds"), 8)
 
         # 2. 修改配置
         update_payload = {
             "webui": {
+                "poll_enabled": False,
                 "poll_interval_seconds": 8,
                 "status_cache_ttl_seconds": 4
             }
@@ -161,11 +165,13 @@ class TestWebUIPollAndCacheApi(unittest.TestCase):
 
         # 3. 再次查询验证生效
         res_get2 = self.make_request("GET", "/api/config")
+        self.assertFalse(res_get2["json"]["webui"].get("poll_enabled"))
         self.assertEqual(res_get2["json"]["webui"].get("poll_interval_seconds"), 8)
         self.assertEqual(res_get2["json"]["webui"].get("status_cache_ttl_seconds"), 4)
 
-        # 4. 验证 /api/status 同步返回更新后的 poll_interval_seconds
+        # 4. 验证 /api/status 同步返回更新后的 poll_interval_seconds 和 poll_enabled
         res_status = self.make_request("GET", "/api/status")
+        self.assertFalse(res_status["json"].get("poll_enabled"))
         self.assertEqual(res_status["json"].get("poll_interval_seconds"), 8)
 
 

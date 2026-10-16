@@ -23,6 +23,7 @@
     "startup_sync_delay": 5
   },
   "webui": {
+    "poll_enabled": true,
     "poll_interval_seconds": 10,
     "status_cache_ttl_seconds": 8
   },

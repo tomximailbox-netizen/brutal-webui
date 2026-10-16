@@ -1,5 +1,6 @@
 // Brutal WebUI 前端核心逻辑
 
+const savedPollEnabled = localStorage.getItem("brutal_poll_enabled");
 const state = {
   token: localStorage.getItem("brutal_token") || "",
   clientIp: "",
@@ -8,6 +9,7 @@ const state = {
   activeTab: "rules",
   isSyncing: false,
   isLoggedOut: false,
+  pollEnabled: savedPollEnabled !== null ? savedPollEnabled === "true" : true,
   pollIntervalSeconds: 10,
   pollTimer: null
 };
@@ -163,6 +165,56 @@ async function loadStatus() {
   } catch (e) {}
 }
 
+// --- 自动轮询控制开关 ---
+function updatePollBtnUI() {
+  const btn = document.getElementById("btn-toggle-poll");
+  const dot = document.getElementById("poll-indicator-dot");
+  const text = document.getElementById("poll-toggle-text");
+  if (!btn || !dot || !text) return;
+
+  if (state.pollEnabled) {
+    dot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+    text.textContent = t("auto_poll_on");
+    text.setAttribute("data-i18n", "auto_poll_on");
+    btn.className = "px-3 py-2 rounded-xl text-xs transition flex items-center gap-1.5 border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20";
+    btn.title = "当前自动刷新开启中，点击暂停";
+  } else {
+    dot.className = "w-2 h-2 rounded-full bg-slate-500";
+    text.textContent = t("auto_poll_off");
+    text.setAttribute("data-i18n", "auto_poll_off");
+    btn.className = "px-3 py-2 rounded-xl text-xs transition flex items-center gap-1.5 border border-slate-700 bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-700";
+    btn.title = "当前自动刷新已暂停，点击开启";
+  }
+
+  const settingCheckbox = document.getElementById("setting-poll-enabled");
+  if (settingCheckbox) {
+    settingCheckbox.checked = state.pollEnabled;
+  }
+}
+
+function toggleAutoPoll(forceState = null) {
+  if (forceState !== null) {
+    state.pollEnabled = Boolean(forceState);
+  } else {
+    state.pollEnabled = !state.pollEnabled;
+  }
+
+  localStorage.setItem("brutal_poll_enabled", state.pollEnabled ? "true" : "false");
+  updatePollBtnUI();
+
+  if (state.pollEnabled) {
+    showToast(t("auto_poll_on"), "success");
+    loadStatus();
+    if (state.activeTab === "rules") {
+      loadRules(true);
+    }
+    startPolling();
+  } else {
+    stopPolling();
+    showToast(t("auto_poll_off"), "info");
+  }
+}
+
 // --- 规则列表 (Rules) ---
 async function loadRules(silent = false) {
   const tbody = document.getElementById("rules-table-body");
@@ -203,7 +255,11 @@ function renderRules() {
   const tbody = document.getElementById("rules-table-body");
   const filter = (document.getElementById("rule-search-input")?.value || "").toLowerCase().trim();
 
-  const filtered = state.rules.filter(r => r.destination.toLowerCase().includes(filter));
+  const filtered = state.rules.filter(r => {
+    const destMatch = r.destination.toLowerCase().includes(filter);
+    const domainMatch = r.domain ? r.domain.toLowerCase().includes(filter) : false;
+    return destMatch || domainMatch;
+  });
 
   if (filtered.length === 0) {
     tbody.innerHTML = `<tr><td colspan="7" class="text-center py-10 text-slate-500">${t("no_rules_matched")}</td></tr>`;
@@ -227,6 +283,7 @@ function renderRules() {
     let dotColor = "bg-emerald-400";
     let isManual = r.is_manual || r.source === 'manual';
     let destHtml = `<span>${r.destination}</span>`;
+    let domainSub = "";
 
     if (r.source === 'static') {
       sourceBadge = `<span class="px-2 py-0.5 rounded-full font-sans text-[11px] font-normal bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">${t("badge_static")}</span>`;
@@ -237,16 +294,26 @@ function renderRules() {
     } else if (r.domain) {
       // 域名同步来源且已识别到具体域名
       const domainTooltip = t("domain_source_tooltip", r.domain);
-      sourceBadge = `<span class="px-2 py-0.5 rounded-full font-sans text-[11px] font-normal bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 cursor-help" title="${domainTooltip}">${t("badge_domain")}</span>`;
-      destHtml = `<span class="cursor-help hover:text-cyan-200 transition-colors" title="${domainTooltip}">${r.destination}</span>`;
+      sourceBadge = `<span class="px-2 py-0.5 rounded-full font-sans text-[11px] font-normal bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 cursor-pointer hover:bg-cyan-500/30 transition-colors" onclick="showToast('${domainTooltip.replace(/'/g, "\\'")}', 'info')" title="${domainTooltip}">${t("badge_domain")}</span>`;
+      destHtml = `<span class="cursor-pointer hover:text-cyan-200 transition-colors" onclick="showToast('${domainTooltip.replace(/'/g, "\\'")}', 'info')" title="${domainTooltip}">${r.destination}</span>`;
+      // 移动端与平板端直观可视化的域名副标题
+      domainSub = `
+        <div class="mt-1 flex items-center gap-1.5 text-xs text-cyan-400/90 font-sans tracking-wide cursor-pointer hover:text-cyan-200" onclick="showToast('${domainTooltip.replace(/'/g, "\\'")}', 'info')" title="${domainTooltip}">
+          <span class="text-cyan-500/60 select-none font-bold">↳</span>
+          <span class="truncate max-w-[220px] sm:max-w-xs">${r.domain}</span>
+        </div>
+      `;
     }
 
     return `
     <tr class="hover:bg-slate-800/40 transition border-b border-slate-800/60 text-sm">
-      <td class="py-3 px-4 font-mono font-medium text-indigo-300 flex items-center gap-2 flex-wrap">
-        <span class="w-2 h-2 rounded-full ${dotColor}"></span>
-        ${destHtml}
-        ${sourceBadge}
+      <td class="py-3 px-4 font-mono font-medium text-indigo-300">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="w-2 h-2 rounded-full ${dotColor}"></span>
+          ${destHtml}
+          ${sourceBadge}
+        </div>
+        ${domainSub}
       </td>
       <td class="py-3 px-4">
         <span class="px-2 py-0.5 rounded-full font-mono text-xs font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">
@@ -529,6 +596,10 @@ async function loadSettings() {
     document.getElementById("setting-scheduler-enabled").checked = data.sync_scheduler?.enabled !== false;
 
     // WebUI 轮询刷新与内核缓存设置
+    const pollEnabledInput = document.getElementById("setting-poll-enabled");
+    if (pollEnabledInput) {
+      pollEnabledInput.checked = (data.webui?.poll_enabled !== undefined ? data.webui.poll_enabled : state.pollEnabled);
+    }
     const pollInput = document.getElementById("setting-poll-interval");
     if (pollInput) {
       pollInput.value = data.webui?.poll_interval_seconds || 10;
@@ -546,6 +617,7 @@ async function handleSaveSettings() {
   const enabled = document.getElementById("setting-scheduler-enabled").checked;
   const newPwd = document.getElementById("setting-new-password").value.trim();
 
+  const pollEnabled = document.getElementById("setting-poll-enabled")?.checked ?? true;
   const pollInterval = Number(document.getElementById("setting-poll-interval")?.value) || 10;
   const cacheTtl = Number(document.getElementById("setting-cache-ttl")?.value) ?? 8;
 
@@ -556,6 +628,7 @@ async function handleSaveSettings() {
       startup_sync_delay: startupDelay
     },
     webui: {
+      poll_enabled: pollEnabled,
       poll_interval_seconds: pollInterval,
       status_cache_ttl_seconds: cacheTtl
     }
@@ -570,7 +643,7 @@ async function handleSaveSettings() {
     showToast(res.msg || t("toast_config_updated"), "success");
     document.getElementById("setting-new-password").value = "";
     state.pollIntervalSeconds = pollInterval;
-    startPolling();
+    toggleAutoPoll(pollEnabled);
     loadStatus();
   } catch (e) {}
 }
@@ -585,15 +658,15 @@ function stopPolling() {
 
 function scheduleNextPoll() {
   stopPolling();
-  // 当页面处于后台标签页或用户已登出时，暂停心跳排期，彻底避免后台空转消耗
-  if (document.hidden || state.isLoggedOut) {
+  // 当页面处于后台标签页、用户已登出或关闭了自动轮询时，暂停心跳排期，彻底避免后台空转消耗
+  if (document.hidden || state.isLoggedOut || !state.pollEnabled) {
     return;
   }
 
   const intervalMs = Math.max(1000, (Number(state.pollIntervalSeconds) || 10) * 1000);
   state.pollTimer = setTimeout(async () => {
     try {
-      if (!document.hidden && !state.isLoggedOut) {
+      if (!document.hidden && !state.isLoggedOut && state.pollEnabled) {
         await loadStatus();
         if (state.activeTab === "rules") {
           // 当前停留在规则列表页时，自动静默刷新各规则及发包量，不引起页面抖动
@@ -611,11 +684,14 @@ function scheduleNextPoll() {
 }
 
 function startPolling() {
-  scheduleNextPoll();
+  if (state.pollEnabled) {
+    scheduleNextPoll();
+  }
 }
 
 // --- 初始装载 ---
 function loadAllData() {
+  updatePollBtnUI();
   loadStatus();
   switchTab(state.activeTab);
   startPolling();
@@ -635,7 +711,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (document.hidden) {
       stopPolling();
     } else {
-      if (!state.isLoggedOut) {
+      if (!state.isLoggedOut && state.pollEnabled) {
         loadStatus();
         if (state.activeTab === "rules") {
           loadRules(true);

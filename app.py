@@ -50,6 +50,7 @@ class BrutalWebApp:
 
         brutal_conf = self.config.get("brutal", {})
         webui_conf = self.config.get("webui", {})
+        self.poll_enabled = bool(webui_conf.get("poll_enabled", True))
         self.poll_interval_seconds = int(webui_conf.get("poll_interval_seconds", 10))
         status_cache_ttl = float(webui_conf.get("status_cache_ttl_seconds", 8))
 
@@ -114,7 +115,7 @@ class BrutalWebApp:
                 "sync_script_path": "./brutal_sync.sh"
             },
             "sync_scheduler": {"enabled": True, "interval_seconds": 600, "startup_sync_delay": 5},
-            "webui": {"poll_interval_seconds": 10, "status_cache_ttl_seconds": 8},
+            "webui": {"poll_enabled": True, "poll_interval_seconds": 10, "status_cache_ttl_seconds": 8},
             "ssl": {"enabled": False, "cert_file": "./cert.pem", "key_file": "./key.pem"}
         }
 
@@ -436,6 +437,7 @@ class BrutalWebApp:
             "static_ip_count": len(static_ips),
             "manual_count": manual_count,
             "total_sent_mb": round(total_sent_mb, 2),
+            "poll_enabled": self.poll_enabled,
             "poll_interval_seconds": self.poll_interval_seconds,
             "sync": sync_status
         }, start_response)
@@ -586,6 +588,7 @@ class BrutalWebApp:
             safe_conf["auth"]["admin_password"] = "******"
         if "webui" not in safe_conf:
             safe_conf["webui"] = {
+                "poll_enabled": True,
                 "poll_interval_seconds": 10,
                 "status_cache_ttl_seconds": 8
             }
@@ -622,6 +625,10 @@ class BrutalWebApp:
         if webui_conf:
             if "webui" not in self.config:
                 self.config["webui"] = {}
+            if "poll_enabled" in webui_conf:
+                poll_enabled = bool(webui_conf["poll_enabled"])
+                self.config["webui"]["poll_enabled"] = poll_enabled
+                self.poll_enabled = poll_enabled
             if "poll_interval_seconds" in webui_conf:
                 poll_interval = max(1, int(webui_conf["poll_interval_seconds"]))
                 self.config["webui"]["poll_interval_seconds"] = poll_interval
