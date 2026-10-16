@@ -542,6 +542,9 @@ async function handleTestResolve() {
     const res = await apiCall("/api/domains/test-resolve", "POST", { domain });
     if (res.success && res.ips && res.ips.length > 0) {
       let outputHtml = `<div class="text-emerald-400 font-mono text-xs mt-1 space-y-1"><div>${t("resolve_success", res.ips.length)}</div>`;
+      if (res.dns_servers) {
+        outputHtml += `<div><span class="text-slate-400">[DNS]:</span> <span class="text-cyan-300">${res.dns_servers}</span></div>`;
+      }
       if (res.ips_v4 && res.ips_v4.length > 0) {
         outputHtml += `<div><span class="text-slate-400">[IPv4]:</span> <strong>${res.ips_v4.join(", ")}</strong></div>`;
       }
@@ -708,6 +711,17 @@ async function loadSettings() {
     if (cacheInput) {
       cacheInput.value = data.webui?.status_cache_ttl_seconds ?? 8;
     }
+
+    // DNS 外部解析设置
+    const dnsServersInput = document.getElementById("setting-dns-servers");
+    if (dnsServersInput) {
+      const servers = data.dns?.servers;
+      dnsServersInput.value = Array.isArray(servers) ? servers.join(", ") : (servers || "8.8.8.8, 8.8.4.4");
+    }
+    const dnsTimeoutInput = document.getElementById("setting-dns-timeout");
+    if (dnsTimeoutInput) {
+      dnsTimeoutInput.value = data.dns?.timeout_seconds ?? 2.5;
+    }
   } catch (e) {}
 }
 
@@ -721,6 +735,9 @@ async function handleSaveSettings() {
   const pollInterval = Number(document.getElementById("setting-poll-interval")?.value) || 10;
   const cacheTtl = Number(document.getElementById("setting-cache-ttl")?.value) ?? 8;
 
+  const dnsServers = document.getElementById("setting-dns-servers")?.value.trim() || "8.8.8.8, 8.8.4.4";
+  const dnsTimeout = Number(document.getElementById("setting-dns-timeout")?.value) || 2.5;
+
   const payload = {
     sync_scheduler: {
       enabled: enabled,
@@ -731,6 +748,10 @@ async function handleSaveSettings() {
       poll_enabled: pollEnabled,
       poll_interval_seconds: pollInterval,
       status_cache_ttl_seconds: cacheTtl
+    },
+    dns: {
+      servers: dnsServers,
+      timeout_seconds: dnsTimeout
     }
   };
 

@@ -31,6 +31,15 @@ install_dependencies() {
     command -v tar >/dev/null 2>&1 || missing+=("tar")
     command -v python3 >/dev/null 2>&1 || missing+=("python3")
 
+    # 检测并安装 dig 工具 (dnsutils / bind-utils) 以支持原生指定 Google DNS 解析
+    if ! command -v dig >/dev/null 2>&1; then
+        if command -v apt-get >/dev/null 2>&1; then
+            missing+=("dnsutils")
+        elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+            missing+=("bind-utils")
+        fi
+    fi
+
     if [ ${#missing[@]} -gt 0 ]; then
         echo "正在自动安装缺失的系统依赖: ${missing[*]} ..."
         if command -v apt-get >/dev/null 2>&1; then

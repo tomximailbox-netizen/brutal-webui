@@ -17,13 +17,15 @@ class SyncRunner:
         domain_file: str = "./brut_domain.txt",
         mock_mode: bool = False,
         wrapper = None,
-        ip_mgr = None
+        ip_mgr = None,
+        dns_servers: Optional[List[str]] = None
     ):
         self.script_path = os.path.abspath(script_path)
         self.domain_file = os.path.abspath(domain_file)
         self.mock_mode = mock_mode or (os.name != 'posix')
         self.wrapper = wrapper
         self.ip_mgr = ip_mgr
+        self.dns_servers = list(dns_servers or ["8.8.8.8", "8.8.4.4"])
 
         self._lock = threading.Lock()
         self._is_running = False
@@ -38,6 +40,12 @@ class SyncRunner:
         self._scheduler_stop = threading.Event()
         self._scheduler_interval: int = 300
         self._scheduler_enabled: bool = False
+
+    def set_dns_servers(self, servers: List[str]):
+        """设置同步执行时使用的 DNS 解析服务器列表"""
+        cleaned = [s.strip() for s in servers if s and s.strip()]
+        if cleaned:
+            self.dns_servers = cleaned
 
     def is_running(self) -> bool:
         return self._is_running
@@ -104,6 +112,7 @@ class SyncRunner:
         time.sleep(0.3)
         self.append_log("========================================")
         self.append_log("读取域名文件: " + self.domain_file)
+        self.append_log(f"DNS 解析服务器: {', '.join(self.dns_servers)}")
         self.append_log("========================================")
         self.append_log("[DNS] node1.example.com -> 123.145.97.17")
         self.append_log("[DNS] node2.example.com -> 1.1.1.1")
@@ -153,13 +162,19 @@ class SyncRunner:
 
         try:
             self.append_log(f"执行命令: {' '.join(cmd)}")
+            self.append_log(f"DNS 解析服务器: {', '.join(self.dns_servers)}")
+
+            env = dict(os.environ)
+            if self.dns_servers:
+                env["DNS_SERVERS"] = " ".join(self.dns_servers)
 
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                bufsize=1
+                bufsize=1,
+                env=env
             )
 
             for line in iter(process.stdout.readline, ''):

@@ -29,6 +29,7 @@ set -u
 
 BRUTALCTL="brutalctl"
 RATE_MBPS="100"
+DNS_SERVERS="${DNS_SERVERS:-8.8.8.8 8.8.4.4}"
 
 get_cidr_mask() {
     local ip="$1"
@@ -43,6 +44,62 @@ get_target_rule() {
     local mask
     mask=$(get_cidr_mask "$ip")
     echo "${ip}/${mask}"
+}
+
+resolve_ips_via_dns() {
+    local domain="$1"
+    local v4=""
+    local v6=""
+
+    # 1. 尝试使用 dig 查询指定的 DNS 服务器列表 (支持 Google DNS 等)
+    if command -v dig >/dev/null 2>&1; then
+        for srv in $DNS_SERVERS; do
+            [ -z "$srv" ] && continue
+            local res4
+            res4=$(dig "@$srv" +short +time=2 +tries=2 "$domain" A 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
+            local res6
+            res6=$(dig "@$srv" +short +time=2 +tries=2 "$domain" AAAA 2>/dev/null | grep -E '^[0-9a-fA-F:]+$' || true)
+            if [ -n "$res4" ] || [ -n "$res6" ]; then
+                v4="$res4"
+                v6="$res6"
+                break
+            fi
+        done
+    fi
+
+    # 2. 如果 dig 未获取到结果且存在 nslookup，尝试使用 nslookup
+    if [ -z "$v4" ] && [ -z "$v6" ] && command -v nslookup >/dev/null 2>&1; then
+        for srv in $DNS_SERVERS; do
+            [ -z "$srv" ] && continue
+            local ns_out
+            ns_out=$(nslookup "$domain" "$srv" 2>/dev/null || true)
+            if [ -n "$ns_out" ]; then
+                local res4
+                res4=$(echo "$ns_out" | awk '/^Address: / {print $2}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sed '1d' || true)
+                local res6
+                res6=$(echo "$ns_out" | awk '/^Address: / {print $2}' | grep -E '^[0-9a-fA-F:]+$' || true)
+                if [ -n "$res4" ] || [ -n "$res6" ]; then
+                    v4="$res4"
+                    v6="$res6"
+                    break
+                fi
+            fi
+        done
+    fi
+
+    # 3. 兜底回退：若外部 DNS 查询无结果，调用系统原生 getent 解析
+    if [ -z "$v4" ] && [ -z "$v6" ]; then
+        v4=$(getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1}' || true)
+        v6=$(getent ahostsv6 "$domain" 2>/dev/null | awk '{print $1}' || true)
+        if [ -z "$v4" ] && [ -z "$v6" ]; then
+            local gen_out
+            gen_out=$(getent ahosts "$domain" 2>/dev/null | awk '{print $1}' || true)
+            v4=$(echo "$gen_out" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
+            v6=$(echo "$gen_out" | grep -E '^[0-9a-fA-F:]+$' || true)
+        fi
+    fi
+
+    printf "%s\n%s\n" "$v4" "$v6" | sed '/^$/d' | grep -vEi '::ffff:' | sort -u || true
 }
 
 # ============================================================
@@ -116,6 +173,7 @@ echo "读取域名文件"
 echo "========================================"
 
 echo "文件：$DOMAIN_FILE"
+echo "DNS 服务器：$DNS_SERVERS"
 
 DOMAIN_COUNT=0
 RESOLVED_DOMAIN_COUNT=0
@@ -150,23 +208,11 @@ while IFS= read -r domain || [ -n "$domain" ]; do
     echo
     echo "[DNS] $domain_name (限速: ${domain_rate} Mbps)"
 
-    # 获取 IPv4 与 IPv6
-    ips_v4=$(getent ahostsv4 "$domain_name" 2>/dev/null | awk '{print $1}' || true)
-    ips_v6=$(getent ahostsv6 "$domain_name" 2>/dev/null | awk '{print $1}' || true)
-    ips=$(printf "%s\n%s\n" "$ips_v4" "$ips_v6" | sed '/^$/d' | sort -u)
-
-    # 兜底：如果 ahostsv4/v6 无输出，尝试通用 ahosts
-    if [ -z "$ips" ]; then
-        ips=$(getent ahosts "$domain_name" 2>/dev/null | awk '{print $1}' | sort -u || true)
-    fi
-
-    # 严格过滤 IPv4 映射/兼容格式的 ::ffff: 伪 IPv6 地址
-    ips=$(printf "%s\n" "$ips" | grep -vEi '::ffff:' | sed '/^$/d' | sort -u || true)
+    # 获取 IPv4 与 IPv6 (优先通过配置的 Google DNS 等外部解析器)
+    ips=$(resolve_ips_via_dns "$domain_name")
 
     if [ -z "$ips" ]; then
-
         echo "  没有解析到有效 IPv4 或原生 IPv6"
-
         continue
     fi
 

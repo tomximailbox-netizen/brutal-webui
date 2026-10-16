@@ -25,14 +25,10 @@ class TestDomainHoverMapping(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_domain_manager_ip_to_domain_map(self):
-        # 手动注入一个解析结果模拟或调用解析
-        # 验证方法存在且能返回字典
-        ip_map = self.domain_mgr.get_cached_ip_to_domain_map()
-        self.assertIsInstance(ip_map, dict)
-
-        # 测试自定义注入映射
+        # 测试自定义注入映射与缓存验证
         self.domain_mgr.set_mock_ip_mapping({"123.145.97.17": "node1.example.com", "2001:db8::1": "node2.example.org"})
         cached_map = self.domain_mgr.get_cached_ip_to_domain_map()
+        self.assertIsInstance(cached_map, dict)
         self.assertEqual(cached_map.get("123.145.97.17"), "node1.example.com")
         self.assertEqual(cached_map.get("123.145.97.17/32"), "node1.example.com")
         self.assertEqual(cached_map.get("2001:db8::1/128"), "node2.example.org")

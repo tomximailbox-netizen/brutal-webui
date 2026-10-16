@@ -61,7 +61,14 @@ class BrutalWebApp:
         )
 
         domain_file = os.path.join(BASE_DIR, brutal_conf.get("domain_file_path", "brut_domain.txt"))
-        self.domain_mgr = DomainManager(file_path=domain_file)
+        dns_conf = self.config.get("dns", {})
+        dns_servers = dns_conf.get("servers", ["8.8.8.8", "8.8.4.4"])
+        dns_timeout = float(dns_conf.get("timeout_seconds", 2.5))
+        self.domain_mgr = DomainManager(
+            file_path=domain_file,
+            dns_servers=dns_servers,
+            dns_timeout=dns_timeout
+        )
 
         ip_file = os.path.join(BASE_DIR, brutal_conf.get("ip_file_path", "brut_ip.txt"))
         self.ip_mgr = IpManager(file_path=ip_file)
@@ -72,7 +79,8 @@ class BrutalWebApp:
             domain_file=domain_file,
             mock_mode=self.brutal.is_mock(),
             wrapper=self.brutal,
-            ip_mgr=self.ip_mgr
+            ip_mgr=self.ip_mgr,
+            dns_servers=dns_servers
         )
 
         # 启动后台定时同步调度（如果启用）
@@ -117,6 +125,7 @@ class BrutalWebApp:
             },
             "sync_scheduler": {"enabled": True, "interval_seconds": 600, "startup_sync_delay": 5},
             "webui": {"poll_enabled": True, "poll_interval_seconds": 10, "status_cache_ttl_seconds": 8},
+            "dns": {"servers": ["8.8.8.8", "8.8.4.4"], "timeout_seconds": 2.5},
             "ssl": {"enabled": False, "cert_file": "./cert.pem", "key_file": "./key.pem"}
         }
 
@@ -642,7 +651,10 @@ class BrutalWebApp:
     def api_test_resolve(self, environ, start_response):
         body = self._parse_json_body(environ)
         domain = body.get("domain", "")
-        result = self.domain_mgr.test_resolve(domain)
+        dns_conf = self.config.get("dns", {})
+        dns_servers = dns_conf.get("servers", ["8.8.8.8", "8.8.4.4"])
+        dns_timeout = float(dns_conf.get("timeout_seconds", 2.5))
+        result = self.domain_mgr.test_resolve(domain, dns_servers=dns_servers, dns_timeout=dns_timeout)
         return self.json_response(result, start_response)
 
     def api_sync_run(self, start_response):
@@ -714,6 +726,31 @@ class BrutalWebApp:
                 cache_ttl = max(0.0, float(webui_conf["status_cache_ttl_seconds"]))
                 self.config["webui"]["status_cache_ttl_seconds"] = cache_ttl
                 self.brutal.set_cache_ttl(cache_ttl)
+
+        dns_conf = body.get("dns", {})
+        if dns_conf:
+            if "dns" not in self.config:
+                self.config["dns"] = {}
+            if "servers" in dns_conf:
+                raw_servers = dns_conf["servers"]
+                if isinstance(raw_servers, str):
+                    servers = [s.strip() for s in raw_servers.replace(",", " ").split() if s.strip()]
+                elif isinstance(raw_servers, list):
+                    servers = [str(s).strip() for s in raw_servers if str(s).strip()]
+                else:
+                    servers = ["8.8.8.8", "8.8.4.4"]
+                if not servers:
+                    servers = ["8.8.8.8", "8.8.4.4"]
+                self.config["dns"]["servers"] = servers
+                self.domain_mgr.set_dns_config(servers=servers)
+                self.sync_runner.set_dns_servers(servers)
+            if "timeout_seconds" in dns_conf:
+                try:
+                    timeout_val = max(0.5, float(dns_conf["timeout_seconds"]))
+                    self.config["dns"]["timeout_seconds"] = timeout_val
+                    self.domain_mgr.set_dns_config(servers=self.config["dns"].get("servers"), timeout=timeout_val)
+                except (ValueError, TypeError):
+                    pass
 
         self.save_config(self.config)
         return self.json_response({"status": "ok", "msg": "配置更新成功"}, start_response)

@@ -3,18 +3,31 @@ import socket
 import tempfile
 import threading
 import time
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
+from core.dns_resolver import SimpleDnsResolver
 
 
 class DomainManager:
     """管理 brut_domain.txt 的原子化读取、写入与解析验证"""
 
-    def __init__(self, file_path: str = "./brut_domain.txt"):
+    def __init__(
+        self,
+        file_path: str = "./brut_domain.txt",
+        dns_servers: Optional[List[str]] = None,
+        dns_timeout: float = 2.0,
+    ):
         self.file_path = os.path.abspath(file_path)
         self._cache_lock = threading.Lock()
         self._cached_ip_map: Dict[str, str] = None
         self._last_map_time: float = 0.0
         self._mock_ip_mapping: Dict[str, str] = {}
+        self.dns_resolver = SimpleDnsResolver(servers=dns_servers, timeout=dns_timeout)
+
+    def set_dns_config(self, servers: Optional[List[str]] = None, timeout: float = 2.0):
+        """动态更新 DNS 解析服务器与超时时间"""
+        self.dns_resolver.set_servers(servers or ["8.8.8.8", "8.8.4.4"])
+        self.dns_resolver.set_timeout(timeout)
+        self.clear_cache()
 
     def set_mock_ip_mapping(self, mapping: Dict[str, str]):
         """测试或 Mock 环境下注入指定的 IP 到域名映射"""
@@ -40,7 +53,7 @@ class DomainManager:
 
         result: Dict[str, str] = {}
 
-        # 1. 合并显式设置的 mock/自定义映射
+        # 1. 若配置了 mock/自定义映射（单元测试或离线模拟环境），直接使用并返回，避免阻塞网络探测
         if self._mock_ip_mapping:
             for ip, dom in self._mock_ip_mapping.items():
                 clean_ip = ip.strip()
@@ -48,17 +61,17 @@ class DomainManager:
                 if "/" not in clean_ip:
                     mask = "/128" if ":" in clean_ip else "/32"
                     result[f"{clean_ip}{mask}"] = dom
+            with self._cache_lock:
+                self._cached_ip_map = result
+                self._last_map_time = now
+            return dict(result)
 
-        # 2. 遍历域名清单解析真实 IP
+        # 2. 遍历域名清单解析真实 IP (通过配置的外部 DNS，如 Google DNS)
         domains = self.get_effective_domains()
         for domain in domains:
             try:
-                addrinfo = socket.getaddrinfo(domain, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-                for item in addrinfo:
-                    raw_ip = item[4][0]
-                    if "::ffff:" in raw_ip.lower():
-                        continue
-                    clean_ip = raw_ip.strip()
+                v4_list, v6_list = self.dns_resolver.resolve_ips(domain)
+                for clean_ip in v4_list + v6_list:
                     result[clean_ip] = domain
                     if "/" not in clean_ip:
                         mask = "/128" if ":" in clean_ip else "/32"
@@ -201,21 +214,29 @@ class DomainManager:
         return False, msg
 
     @staticmethod
-    def test_resolve(domain: str) -> Dict[str, Any]:
-        """测试指定域名在当前系统的 IPv4 与 IPv6 解析结果"""
+    def test_resolve(
+        domain: str,
+        dns_servers: Optional[List[str]] = None,
+        dns_timeout: float = 2.5,
+    ) -> Dict[str, Any]:
+        """测试指定域名的 IPv4 与 IPv6 解析结果 (默认通过 Google DNS 等外部服务器)"""
         domain = domain.strip()
         if not domain:
             return {"domain": domain, "success": False, "ips": [], "error": "域名不能为空"}
 
         try:
-            # 同时解析 IPv4 与 IPv6
-            addrinfo = socket.getaddrinfo(domain, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-            raw_ips = list(set(item[4][0] for item in addrinfo))
-            # 严格过滤掉 IPv4 映射/兼容格式的 ::ffff: 伪 IPv6 地址
-            raw_ips = [ip for ip in raw_ips if "::ffff:" not in ip.lower()]
-            v4 = sorted([ip for ip in raw_ips if ':' not in ip])
-            v6 = sorted([ip for ip in raw_ips if ':' in ip])
+            resolver = SimpleDnsResolver(servers=dns_servers, timeout=dns_timeout)
+            v4, v6 = resolver.resolve_ips(domain)
             ips = v4 + v6
-            return {"domain": domain, "success": True, "ips": ips, "ips_v4": v4, "ips_v6": v6, "error": None}
+            server_display = ", ".join(resolver.servers)
+            return {
+                "domain": domain,
+                "success": True,
+                "ips": ips,
+                "ips_v4": v4,
+                "ips_v6": v6,
+                "dns_servers": server_display,
+                "error": None,
+            }
         except Exception as e:
             return {"domain": domain, "success": False, "ips": [], "error": str(e)}

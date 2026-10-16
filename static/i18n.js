@@ -128,6 +128,11 @@ const I18N_RESOURCES = {
       settings_poll_interval_desc: "Refresh interval while dashboard is active in foreground (auto-pauses when tab is hidden or minimized)",
       settings_cache_ttl_label: "Kernel Query Cache TTL (seconds)",
       settings_cache_ttl_desc: "Short-term memory cache for brutalctl list results (0 = real-time query on every request; cleared immediately on add/del)",
+      settings_dns_title: "DNS Resolution Settings",
+      settings_dns_servers_label: "DNS Resolvers (IPv4/IPv6)",
+      settings_dns_servers_help: "External DNS servers used to resolve domain IPs (separated by commas or spaces, defaults to Google IPv4 DNS)",
+      settings_dns_timeout_label: "DNS Query Timeout (seconds)",
+      settings_dns_timeout_help: "Timeout per DNS server query (defaults to 2.5s, falls back to local system resolver on failure)",
       btn_save_settings: "Save All Settings",
 
       // 添加规则弹窗
@@ -289,6 +294,11 @@ const I18N_RESOURCES = {
       settings_poll_interval_desc: "页面处于前台活动时自动刷新状态的间隔（切换标签页或最小化时自动挂起暂停）",
       settings_cache_ttl_label: "内核状态查询缓存时长 (秒)",
       settings_cache_ttl_desc: "短时缓存 brutalctl 查询结果（0 表示每次实时查），在添加、删除规则或手动同步时立即自动失效清除",
+      settings_dns_title: "DNS 外部解析配置",
+      settings_dns_servers_label: "DNS 解析服务器 (IPv4/IPv6)",
+      settings_dns_servers_help: "指定解析域名时使用的外部 DNS 服务器列表（逗号或空格分隔，默认使用 Google IPv4 DNS）",
+      settings_dns_timeout_label: "DNS 查询超时 (秒)",
+      settings_dns_timeout_help: "单个 DNS 服务器响应超时时间 (默认 2.5 秒，超时自动尝试下一服务器或本地兜底)",
       btn_save_settings: "保存全部设置",
 
       modal_add_title: "添加 brutalctl 限速规则",
@@ -447,6 +457,11 @@ const I18N_RESOURCES = {
       settings_poll_interval_desc: "頁面處於前台活動時自動刷新狀態的間隔（切換標籤頁或最小化時自動掛起暫停）",
       settings_cache_ttl_label: "內核狀態查詢快取時長 (秒)",
       settings_cache_ttl_desc: "短時快取 brutalctl 查詢結果（0 表示每次實時查），在新增、刪除規則或手動同步時立即自動失效清除",
+      settings_dns_title: "DNS 外部解析設定",
+      settings_dns_servers_label: "DNS 解析伺服器 (IPv4/IPv6)",
+      settings_dns_servers_help: "指定解析網域時使用的外部 DNS 伺服器列表（逗號或空格分隔，預設使用 Google IPv4 DNS）",
+      settings_dns_timeout_label: "DNS 查詢逾時 (秒)",
+      settings_dns_timeout_help: "單個 DNS 伺服器回應逾時時間 (預設 2.5 秒，逾時自動嘗試下一伺服器或本地保底)",
       btn_save_settings: "儲存全部設定",
 
       modal_add_title: "新增 brutalctl 限速規則",
