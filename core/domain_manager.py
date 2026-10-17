@@ -3,6 +3,7 @@ import socket
 import tempfile
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Dict, Any, Optional
 from core.dns_resolver import SimpleDnsResolver
 
@@ -18,10 +19,12 @@ class DomainManager:
     ):
         self.file_path = os.path.abspath(file_path)
         self._cache_lock = threading.Lock()
-        self._cached_ip_map: Dict[str, str] = None
+        self._cached_ip_map: Optional[Dict[str, str]] = None
         self._last_map_time: float = 0.0
         self._mock_ip_mapping: Dict[str, str] = {}
         self.dns_resolver = SimpleDnsResolver(servers=dns_servers, timeout=dns_timeout)
+        self._refresh_lock = threading.Lock()
+        self._is_refreshing = False
 
     def set_dns_config(self, servers: Optional[List[str]] = None, timeout: float = 2.0):
         """动态更新 DNS 解析服务器与超时时间"""
@@ -40,21 +43,74 @@ class DomainManager:
             self._cached_ip_map = None
             self._last_map_time = 0.0
 
-    def get_cached_ip_to_domain_map(self, ttl_seconds: float = 60.0) -> Dict[str, str]:
+    def trigger_async_refresh(self):
+        """非阻塞后台异步刷新 DNS IP-域名 映射缓存（避免主 HTTP 线程阻塞）"""
+        with self._refresh_lock:
+            if self._is_refreshing:
+                return
+            self._is_refreshing = True
+
+        threading.Thread(target=self._run_async_refresh_worker, daemon=True).start()
+
+    def _run_async_refresh_worker(self):
+        try:
+            self._refresh_dns_ip_map()
+        finally:
+            with self._refresh_lock:
+                self._is_refreshing = False
+
+    def _refresh_dns_ip_map(self) -> Dict[str, str]:
+        """并发解析所有域名并原子化写入缓存"""
+        domains = self.get_effective_domains()
+        if not domains:
+            with self._cache_lock:
+                self._cached_ip_map = {}
+                self._last_map_time = time.time()
+            return {}
+
+        result: Dict[str, str] = {}
+        max_workers = min(10, max(1, len(domains)))
+
+        def resolve_single(dom):
+            try:
+                v4, v6 = self.dns_resolver.resolve_ips(dom)
+                return dom, v4 + v6
+            except Exception:
+                return dom, []
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_dom = {executor.submit(resolve_single, d): d for d in domains}
+            for future in as_completed(future_to_dom):
+                dom, ips = future.result()
+                for clean_ip in ips:
+                    result[clean_ip] = dom
+                    if "/" not in clean_ip:
+                        mask = "/128" if ":" in clean_ip else "/32"
+                        result[f"{clean_ip}{mask}"] = dom
+
+        now = time.time()
+        with self._cache_lock:
+            self._cached_ip_map = result
+            self._last_map_time = now
+
+        return result
+
+    def get_cached_ip_to_domain_map(self, ttl_seconds: float = 120.0, blocking: bool = False) -> Dict[str, str]:
         """
         获取当前 brut_domain.txt 中所有域名解析出的 IP 到域名的映射字典。
         包含纯 IP 与带掩码 CIDR 键（如 '1.2.3.4' 和 '1.2.3.4/32'）。
-        内置 TTL 缓存，避免每次查询都执行昂贵的阻塞 DNS 网络探测。
+        - blocking=False (默认): 非阻塞模式，若无缓存立即在后台异步解析，主线程 0ms 瞬间响应；
+        - blocking=True: 阻塞等待所有域名并发解析完成。
         """
         now = time.time()
         with self._cache_lock:
             if self._cached_ip_map is not None and (now - self._last_map_time) < ttl_seconds:
                 return dict(self._cached_ip_map)
-
-        result: Dict[str, str] = {}
+            stale_cache = dict(self._cached_ip_map) if self._cached_ip_map is not None else None
 
         # 1. 若配置了 mock/自定义映射（单元测试或离线模拟环境），直接使用并返回，避免阻塞网络探测
         if self._mock_ip_mapping:
+            result = {}
             for ip, dom in self._mock_ip_mapping.items():
                 clean_ip = ip.strip()
                 result[clean_ip] = dom
@@ -66,24 +122,13 @@ class DomainManager:
                 self._last_map_time = now
             return dict(result)
 
-        # 2. 遍历域名清单解析真实 IP (通过配置的外部 DNS，如 Google DNS)
-        domains = self.get_effective_domains()
-        for domain in domains:
-            try:
-                v4_list, v6_list = self.dns_resolver.resolve_ips(domain)
-                for clean_ip in v4_list + v6_list:
-                    result[clean_ip] = domain
-                    if "/" not in clean_ip:
-                        mask = "/128" if ":" in clean_ip else "/32"
-                        result[f"{clean_ip}{mask}"] = domain
-            except Exception:
-                continue
-
-        with self._cache_lock:
-            self._cached_ip_map = result
-            self._last_map_time = now
-
-        return dict(result)
+        # 2. 阻塞与非阻塞模式处理
+        if blocking:
+            return self._refresh_dns_ip_map()
+        else:
+            self.trigger_async_refresh()
+            # Stale-While-Revalidate: 有旧数据立即返回旧数据，无缓存返回空字典，绝不阻塞用户请求
+            return stale_cache if stale_cache is not None else {}
 
     def get_raw_content(self) -> str:
         """获取原始文件内容（包含注释与换行）"""

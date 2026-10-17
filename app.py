@@ -90,6 +90,9 @@ class BrutalWebApp:
             startup_delay = float(scheduler_conf.get("startup_sync_delay", 5))
             self.sync_runner.start_scheduler(interval, initial_delay=startup_delay)
 
+        # 启动时后台非阻塞预热域名 DNS 映射缓存，确保用户进入控制台瞬间秒开
+        self.domain_mgr.trigger_async_refresh()
+
     @staticmethod
     def _merge_defaults(user_conf: dict, default_conf: dict) -> tuple:
         """平滑递归合并默认配置：新版本增加的配置项自动补齐，但绝对保留用户原有的所有自定义值"""
@@ -432,8 +435,8 @@ class BrutalWebApp:
 
     def api_status(self, environ, start_response):
         static_ips = set(self.ip_mgr.get_effective_ips())
-        domain_ip_map = self.domain_mgr.get_cached_ip_to_domain_map()
-        rules = self.brutal.list_rules(static_ips=static_ips, domain_ip_map=domain_ip_map)
+        # 统计状态无需解析域名映射，直接使用轻量规则数据以实现极致性能
+        rules = self.brutal.list_rules(static_ips=static_ips)
         effective_domains = self.domain_mgr.get_effective_domains()
         sync_status = self.sync_runner.get_status()
         client_ip = self._extract_client_ip(environ)
@@ -457,7 +460,8 @@ class BrutalWebApp:
 
     def api_list_rules(self, start_response):
         static_ips = set(self.ip_mgr.get_effective_ips())
-        domain_ip_map = self.domain_mgr.get_cached_ip_to_domain_map()
+        # 非阻塞获取域名 IP 映射（0ms 响应，后台静默异步并发更新），彻底消除登录与首屏白屏转圈延迟
+        domain_ip_map = self.domain_mgr.get_cached_ip_to_domain_map(blocking=False)
         rules = self.brutal.list_rules(static_ips=static_ips, domain_ip_map=domain_ip_map)
         return self.json_response({"rules": rules}, start_response)
 
@@ -561,6 +565,7 @@ class BrutalWebApp:
         new_content = body.get("content", "")
         success, msg, count = self.domain_mgr.save_content(new_content)
         if success:
+            self.domain_mgr.trigger_async_refresh()
             return self.json_response({"status": "ok", "msg": msg, "count": count}, start_response)
         return self.json_response({"error": msg}, start_response, status="500 Internal Server Error")
 

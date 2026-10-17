@@ -22,7 +22,14 @@ class TestDomainHoverMapping(unittest.TestCase):
         self.domain_mgr = DomainManager(file_path=self.domain_file)
 
     def tearDown(self):
-        self.temp_dir.cleanup()
+        try:
+            self.temp_dir.cleanup()
+        except Exception:
+            time.sleep(0.1)
+            try:
+                self.temp_dir.cleanup()
+            except Exception:
+                pass
 
     def test_domain_manager_ip_to_domain_map(self):
         # 测试自定义注入映射与缓存验证
