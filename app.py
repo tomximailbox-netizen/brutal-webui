@@ -17,7 +17,7 @@ from core.sync_runner import SyncRunner
 # 基础目录与版本号 (基于年月日 CalVer)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
-APP_VERSION = "v2026.10.16"
+APP_VERSION = "v2026.10.17"
 
 
 class ThreadedWSGIServer(socketserver.ThreadingMixIn, WSGIServer):
