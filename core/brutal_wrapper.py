@@ -244,10 +244,13 @@ class BrutalWrapper:
         self.invalidate_cache()
 
         if self.mock_mode:
-            # 查重
+            # 查重与速率比较
             for r in self._mock_rules:
                 if r["destination"] == valid_ip:
+                    old_rate = r.get("rate_mbps")
                     r["rate_mbps"] = rate
+                    if old_rate is not None and float(old_rate) == float(rate):
+                        return True, f"Mock: 规则已存在且速率一致 ({valid_ip} {rate} Mbps)"
                     return True, f"Mock: 规则已更新 {valid_ip} -> {rate} Mbps"
             new_id = max([r.get("id", 0) for r in self._mock_rules] or [0]) + 1
             self._mock_rules.append({

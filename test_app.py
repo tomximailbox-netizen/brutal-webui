@@ -117,6 +117,18 @@ class TestBrutalWrapper(unittest.TestCase):
         target_v6 = next(r for r in rules if r["destination"] == "2001:db8::88/128")
         self.assertEqual(target_v6["rate_mbps"], 200.0)
 
+        # 速率比较：速率一致时提示速率一致
+        success, msg = self.wrapper.add_rule("1.2.3.4/32", 150)
+        self.assertTrue(success)
+        self.assertIn("速率一致", msg)
+
+        # 速率比较：速率不同时更新速率
+        success, msg = self.wrapper.add_rule("1.2.3.4/32", 300)
+        self.assertTrue(success)
+        self.assertIn("已更新", msg)
+        target = next(r for r in self.wrapper.list_rules() if r["destination"] == "1.2.3.4/32")
+        self.assertEqual(target["rate_mbps"], 300.0)
+
         # 删除规则
         success, msg = self.wrapper.del_rule("1.2.3.4/32")
         self.assertTrue(success)
@@ -297,6 +309,13 @@ class TestSyncRunner(unittest.TestCase):
             self.assertIn("2001:db8:ffff::1/128", rule_map)
             self.assertEqual(rule_map["2001:db8:ffff::1/128"]["rate_mbps"], 400.0)
             self.assertEqual(rule_map["2001:db8:ffff::1/128"]["source"], "static")
+
+            # 再次触发同步，验证速率比较：速率一致时记录保持生效
+            success2, msg2 = runner.trigger_sync()
+            self.assertTrue(success2)
+            time.sleep(0.6)
+            logs = "".join(runner.get_logs())
+            self.assertIn("速率一致", logs)
         finally:
             if os.path.exists(temp_ip_file.name):
                 os.remove(temp_ip_file.name)

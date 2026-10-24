@@ -88,14 +88,28 @@ class SyncRunner:
         try:
             self._last_run_time = time.time()
 
-            # 1. 优先下发并应用静态 IP 清单规则（确保服务器重启或同步时静态 IP 100% 生效）
+            # 1. 优先下发并应用静态 IP 清单规则（确保服务器重启或同步时静态 IP 100% 生效，且包含速率比较）
             if self.ip_mgr and self.wrapper:
                 static_rules = self.ip_mgr.get_effective_ips_with_rates(default_rate=100.0)
                 if static_rules:
                     self.append_log(f">>> 正在应用静态 IP 清单规则 (共 {len(static_rules)} 条)...")
+                    current_rules_map = {r["destination"]: r.get("rate_mbps") for r in self.wrapper.list_rules()}
                     for s_ip, s_rate in static_rules.items():
-                        ok, msg = self.wrapper.add_rule(s_ip, s_rate, is_manual=False)
-                        self.append_log(f"[静态IP] {s_ip} ({s_rate} Mbps) -> {'生效' if ok else '失败: ' + msg}")
+                        dest_raw = s_ip.split("/")[0]
+                        curr_rate = current_rules_map.get(s_ip)
+                        if curr_rate is None:
+                            for c_dest, c_rate in current_rules_map.items():
+                                if c_dest.split("/")[0] == dest_raw:
+                                    curr_rate = c_rate
+                                    break
+
+                        # 速率比较：速率一致则无需重复下发
+                        if curr_rate is not None and float(curr_rate) == float(s_rate):
+                            self.append_log(f"[静态IP] {s_ip} ({s_rate} Mbps) -> 速率一致，保持生效")
+                        else:
+                            ok, msg = self.wrapper.add_rule(s_ip, s_rate, is_manual=False)
+                            change_desc = f"速率变更 ({curr_rate} -> {s_rate} Mbps)" if curr_rate is not None else f"新增 ({s_rate} Mbps)"
+                            self.append_log(f"[静态IP] {s_ip} -> {change_desc} {'生效' if ok else '失败: ' + msg}")
 
             # 2. 执行域名 DNS 动态解析同步
             if self.mock_mode:

@@ -159,9 +159,10 @@ fi
 
 DNS_IPS=$(mktemp)
 CURRENT_IPS=$(mktemp)
+CURRENT_RULES=$(mktemp)
 
 cleanup() {
-    rm -f "$DNS_IPS" "$CURRENT_IPS"
+    rm -f "$DNS_IPS" "$CURRENT_IPS" "$CURRENT_RULES" "${DNS_IPS}.tmp"
 }
 
 trap cleanup EXIT
@@ -313,16 +314,19 @@ echo "========================================"
             if ($1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/32$/) {
                 ip = $1
                 sub(/\/32$/, "", ip)
-                print ip
+                rate = int($2)
+                print ip, rate
             } else if ($1 ~ /^[0-9a-fA-F:.]+\/128$/) {
                 ip = $1
                 sub(/\/128$/, "", ip)
-                print ip
+                rate = int($2)
+                print ip, rate
             }
         }
     ' |
-    sort -u > "$CURRENT_IPS"
+    sort -k1,1 -u > "$CURRENT_RULES"
 
+awk '{print $1}' "$CURRENT_RULES" > "$CURRENT_IPS"
 
 CURRENT_COUNT=$(wc -l < "$CURRENT_IPS")
 
@@ -331,15 +335,16 @@ echo "当前 /32(v4) 与 /128(v6) IP : $CURRENT_COUNT"
 
 
 # ============================================================
-# 3. 添加新 IP
+# 3. 添加新 IP 与速率比较更新
 # ============================================================
 
 echo
 echo "========================================"
-echo "添加新 IP"
+echo "添加或更新 IP (包含速率比较)"
 echo "========================================"
 
 ADD_COUNT=0
+UPDATE_COUNT=0
 SKIP_COUNT=0
 
 while IFS= read -r line; do
@@ -352,25 +357,49 @@ while IFS= read -r line; do
 
     rule=$(get_target_rule "$ip")
 
-    if grep -Fxq "$ip" "$CURRENT_IPS"; then
+    # 查询当前 brutalctl 中该 IP 是否已存在及其当前速率
+    curr_rate=$(awk -v target="$ip" '$1 == target {print $2; exit}' "$CURRENT_RULES")
 
-        echo "[SKIP] $rule 已存在 (${rate} Mbps)"
+    if [ -n "$curr_rate" ]; then
 
-        SKIP_COUNT=$((SKIP_COUNT + 1))
+        # 速率比较：如果已有速率与目标速率数值一致，跳过无需重复调用内核工具
+        if [ "$curr_rate" -eq "$rate" ] 2>/dev/null || [ "$curr_rate" = "$rate" ]; then
+
+            echo "[SKIP  ] $rule 速率一致 (${rate} Mbps)"
+
+            SKIP_COUNT=$((SKIP_COUNT + 1))
+
+        else
+
+            echo "[UPDATE] $rule 速率变更: ${curr_rate} Mbps -> ${rate} Mbps"
+
+            if "$BRUTALCTL" add "$rule" "$rate"; then
+
+                echo "         -> 更新成功"
+
+                UPDATE_COUNT=$((UPDATE_COUNT + 1))
+
+            else
+
+                echo "         -> 更新失败"
+
+            fi
+
+        fi
 
     else
 
-        echo "[ADD ] $rule ${rate} Mbps"
+        echo "[ADD   ] $rule ${rate} Mbps"
 
         if "$BRUTALCTL" add "$rule" "$rate"; then
 
-            echo "       -> 成功"
+            echo "         -> 成功"
 
             ADD_COUNT=$((ADD_COUNT + 1))
 
         else
 
-            echo "       -> 失败"
+            echo "         -> 失败"
 
         fi
 
@@ -437,9 +466,10 @@ echo "同步完成"
 echo "========================================"
 
 echo "域名数量       : $DOMAIN_COUNT"
-echo "DNS IPv4       : $DNS_COUNT"
-echo "已存在         : $SKIP_COUNT"
+echo "DNS IP (v4/v6) : $DNS_COUNT"
+echo "已存在且速率一致: $SKIP_COUNT"
 echo "新增           : $ADD_COUNT"
+echo "速率更新       : $UPDATE_COUNT"
 echo "删除           : $DEL_COUNT"
 
 echo

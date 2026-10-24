@@ -604,9 +604,12 @@ class BrutalWebApp:
             for r_ip in removed_ips:
                 self.brutal.del_rule(r_ip)
 
-            # 2. 立即将清单中的所有有效静态规则下发生效到 brutalctl
+            # 2. 立即将清单中的所有有效静态规则下发生效到 brutalctl（仅在规则不存在或速率变更时下发）
+            current_rules_map = {r["destination"]: r.get("rate_mbps") for r in self.brutal.list_rules()}
             for s_ip, s_rate in new_rules.items():
-                self.brutal.add_rule(s_ip, s_rate, is_manual=False)
+                curr_rate = current_rules_map.get(s_ip)
+                if curr_rate is None or float(curr_rate) != float(s_rate):
+                    self.brutal.add_rule(s_ip, s_rate, is_manual=False)
 
             return self.json_response({
                 "status": "ok",
@@ -622,10 +625,14 @@ class BrutalWebApp:
         rate = body.get("rate")
         success, msg = self.ip_mgr.append_ip(ip, rate=rate)
         if success:
-            # 存入静态清单后，从临时内存集合中注销并作为静态规则立即确保下发生效
+            # 存入静态清单后，从临时内存集合中注销并作为静态规则立即确保下发生效（速率比较）
             self.brutal.unmark_manual_ip(ip)
             apply_rate = float(rate) if rate and float(rate) > 0 else 100.0
-            self.brutal.add_rule(ip, apply_rate, is_manual=False)
+            rules_map = {r["destination"]: r.get("rate_mbps") for r in self.brutal.list_rules()}
+            dest_formatted = validate_ip_cidr(ip, for_delete=False)
+            curr_rate = rules_map.get(dest_formatted)
+            if curr_rate is None or float(curr_rate) != apply_rate:
+                self.brutal.add_rule(ip, apply_rate, is_manual=False)
             return self.json_response({"status": "ok", "msg": msg}, start_response)
         return self.json_response({"error": msg}, start_response, status="400 Bad Request")
 
