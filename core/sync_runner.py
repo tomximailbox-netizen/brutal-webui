@@ -75,9 +75,14 @@ class SyncRunner:
         self._is_running = True
         self.append_log(">>> 触发同步任务...")
 
-        thread = threading.Thread(target=self._run_sync_worker, daemon=True)
-        thread.start()
-        return True, "同步任务已启动"
+        try:
+            thread = threading.Thread(target=self._run_sync_worker, daemon=True)
+            thread.start()
+            return True, "同步任务已启动"
+        except Exception as e:
+            self._is_running = False
+            self._lock.release()
+            return False, f"无法启动后台同步线程: {e}"
 
     def _run_sync_worker(self):
         try:

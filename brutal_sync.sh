@@ -55,48 +55,51 @@ resolve_ips_via_dns() {
     if command -v dig >/dev/null 2>&1; then
         for srv in $DNS_SERVERS; do
             [ -z "$srv" ] && continue
-            local res4
-            res4=$(dig "@$srv" +short +time=2 +tries=2 "$domain" A 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
-            local res6
-            res6=$(dig "@$srv" +short +time=2 +tries=2 "$domain" AAAA 2>/dev/null | grep -E '^[0-9a-fA-F:]+$' || true)
-            if [ -n "$res4" ] || [ -n "$res6" ]; then
-                v4="$res4"
-                v6="$res6"
+            if [ -z "$v4" ]; then
+                v4=$(dig "@$srv" +short +time=2 +tries=2 "$domain" A 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
+            fi
+            if [ -z "$v6" ]; then
+                v6=$(dig "@$srv" +short +time=2 +tries=2 "$domain" AAAA 2>/dev/null | grep -E '^[0-9a-fA-F:]+$' || true)
+            fi
+            # 双栈地址族均已解析到记录时即可提前结束轮询
+            if [ -n "$v4" ] && [ -n "$v6" ]; then
                 break
             fi
         done
     fi
 
-    # 2. 如果 dig 未获取到结果且存在 nslookup，尝试使用 nslookup
-    if [ -z "$v4" ] && [ -z "$v6" ] && command -v nslookup >/dev/null 2>&1; then
+    # 2. 如果还有未解析出的地址族且系统安装了 nslookup，尝试使用 nslookup
+    if ([ -z "$v4" ] || [ -z "$v6" ]) && command -v nslookup >/dev/null 2>&1; then
         for srv in $DNS_SERVERS; do
             [ -z "$srv" ] && continue
             local ns_out
             ns_out=$(nslookup "$domain" "$srv" 2>/dev/null || true)
             if [ -n "$ns_out" ]; then
-                local res4
-                res4=$(echo "$ns_out" | awk '/^Address: / {print $2}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sed '1d' || true)
-                local res6
-                res6=$(echo "$ns_out" | awk '/^Address: / {print $2}' | grep -E '^[0-9a-fA-F:]+$' || true)
-                if [ -n "$res4" ] || [ -n "$res6" ]; then
-                    v4="$res4"
-                    v6="$res6"
+                if [ -z "$v4" ]; then
+                    v4=$(echo "$ns_out" | awk -v srv="$srv" '($1 == "Address:" || $1 == "Addresses:") && $2 != srv && $2 !~ ("^" srv "#") {print $2}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
+                fi
+                if [ -z "$v6" ]; then
+                    v6=$(echo "$ns_out" | awk -v srv="$srv" '($1 == "Address:" || $1 == "Addresses:") && $2 != srv && $2 !~ ("^" srv "#") {print $2}' | grep -E '^[0-9a-fA-F:]+$' || true)
+                fi
+                if [ -n "$v4" ] && [ -n "$v6" ]; then
                     break
                 fi
             fi
         done
     fi
 
-    # 3. 兜底回退：若外部 DNS 查询无结果，调用系统原生 getent 解析
+    # 3. 兜底回退：若外部 DNS 未能完整解析，按地址族调用系统原生 getent 解析
+    if [ -z "$v4" ]; then
+        v4=$(getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
+    fi
+    if [ -z "$v6" ]; then
+        v6=$(getent ahostsv6 "$domain" 2>/dev/null | awk '{print $1}' | grep -E '^[0-9a-fA-F:]+$' || true)
+    fi
     if [ -z "$v4" ] && [ -z "$v6" ]; then
-        v4=$(getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1}' || true)
-        v6=$(getent ahostsv6 "$domain" 2>/dev/null | awk '{print $1}' || true)
-        if [ -z "$v4" ] && [ -z "$v6" ]; then
-            local gen_out
-            gen_out=$(getent ahosts "$domain" 2>/dev/null | awk '{print $1}' || true)
-            v4=$(echo "$gen_out" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
-            v6=$(echo "$gen_out" | grep -E '^[0-9a-fA-F:]+$' || true)
-        fi
+        local gen_out
+        gen_out=$(getent ahosts "$domain" 2>/dev/null | awk '{print $1}' || true)
+        v4=$(echo "$gen_out" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
+        v6=$(echo "$gen_out" | grep -E '^[0-9a-fA-F:]+$' || true)
     fi
 
     printf "%s\n%s\n" "$v4" "$v6" | sed '/^$/d' | grep -vEi '::ffff:' | sort -u || true

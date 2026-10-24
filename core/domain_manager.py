@@ -61,11 +61,26 @@ class DomainManager:
 
     def _refresh_dns_ip_map(self) -> Dict[str, str]:
         """并发解析所有域名并原子化写入缓存"""
+        now = time.time()
+        # 1. 若配置了 mock/测试环境指定的映射，直接使用，防止被后台线程覆盖
+        if self._mock_ip_mapping:
+            result = {}
+            for ip, dom in self._mock_ip_mapping.items():
+                clean_ip = ip.strip()
+                result[clean_ip] = dom
+                if "/" not in clean_ip:
+                    mask = "/128" if ":" in clean_ip else "/32"
+                    result[f"{clean_ip}{mask}"] = dom
+            with self._cache_lock:
+                self._cached_ip_map = result
+                self._last_map_time = now
+            return dict(result)
+
         domains = self.get_effective_domains()
         if not domains:
             with self._cache_lock:
                 self._cached_ip_map = {}
-                self._last_map_time = time.time()
+                self._last_map_time = now
             return {}
 
         result: Dict[str, str] = {}
@@ -88,8 +103,11 @@ class DomainManager:
                         mask = "/128" if ":" in clean_ip else "/32"
                         result[f"{clean_ip}{mask}"] = dom
 
-        now = time.time()
         with self._cache_lock:
+            # 临时网络故障容灾：若域名存在但本次解析全为空，保留先前有效旧缓存避免标记突变
+            if not result and domains and self._cached_ip_map:
+                self._last_map_time = now
+                return dict(self._cached_ip_map)
             self._cached_ip_map = result
             self._last_map_time = now
 
@@ -274,6 +292,16 @@ class DomainManager:
             v4, v6 = resolver.resolve_ips(domain)
             ips = v4 + v6
             server_display = ", ".join(resolver.servers)
+            if not ips:
+                return {
+                    "domain": domain,
+                    "success": False,
+                    "ips": [],
+                    "ips_v4": [],
+                    "ips_v6": [],
+                    "dns_servers": server_display,
+                    "error": "未解析到任何有效 IPv4/IPv6 地址",
+                }
             return {
                 "domain": domain,
                 "success": True,
@@ -284,4 +312,4 @@ class DomainManager:
                 "error": None,
             }
         except Exception as e:
-            return {"domain": domain, "success": False, "ips": [], "error": str(e)}
+            return {"domain": domain, "success": False, "ips": [], "ips_v4": [], "ips_v6": [], "error": str(e)}

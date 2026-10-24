@@ -145,6 +145,50 @@ class TestDnsResolver(unittest.TestCase):
             self.assertEqual(app.domain_mgr.dns_resolver.servers, ["1.1.1.1", "8.8.8.8"])
             self.assertEqual(app.sync_runner.dns_servers, ["1.1.1.1", "8.8.8.8"])
 
+            # 再次仅更新 servers，验证 timeout 不会被静默重置为 2.0
+            update_servers_only = json.dumps({"dns": {"servers": "9.9.9.9"}}).encode("utf-8")
+            environ2 = {
+                "REQUEST_METHOD": "PUT",
+                "PATH_INFO": "/api/config",
+                "CONTENT_LENGTH": str(len(update_servers_only)),
+                "wsgi.input": BytesIO(update_servers_only),
+            }
+            app.api_update_config(environ2, MagicMock())
+            self.assertEqual(app.domain_mgr.dns_resolver.timeout, 3.0)
+
+    def test_encode_dns_query_invalid_labels(self):
+        # 1. 空域名应抛出 ValueError
+        with self.assertRaises(ValueError):
+            encode_dns_query("", 1)
+
+        # 2. 包含超长标签 (>63 bytes) 应抛出 ValueError
+        long_label = "a" * 64 + ".com"
+        with self.assertRaises(ValueError):
+            encode_dns_query(long_label, 1)
+
+        # 3. 连续点号 (如 foo..bar.com) 应自动过滤空标签并正常编码
+        pkt, _ = encode_dns_query("foo..bar.com", 1)
+        self.assertIn(b"\x03foo\x03bar\x03com\x00", pkt)
+
+    @patch("core.dns_resolver.SimpleDnsResolver.resolve_ips")
+    def test_domain_manager_test_resolve_unresolvable_returns_failure(self, mock_resolve):
+        from core.domain_manager import DomainManager
+        # 当域名解析不到任何记录时，success 应返回 False 并附带明确错误
+        mock_resolve.return_value = ([], [])
+        res = DomainManager.test_resolve("nonexistent-example.xyz")
+        self.assertFalse(res["success"])
+        self.assertEqual(res["ips"], [])
+        self.assertIn("未解析到任何有效", res["error"])
+
+    def test_refresh_dns_ip_map_preserves_mock_mapping(self):
+        from core.domain_manager import DomainManager
+        mgr = DomainManager()
+        mgr.set_mock_ip_mapping({"198.51.100.1": "mock.node"})
+        res = mgr._refresh_dns_ip_map()
+        self.assertIn("198.51.100.1", res)
+        self.assertEqual(res["198.51.100.1"], "mock.node")
+        self.assertEqual(res["198.51.100.1/32"], "mock.node")
+
 
 if __name__ == "__main__":
     unittest.main()

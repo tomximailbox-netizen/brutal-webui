@@ -34,6 +34,22 @@ class TestAuth(unittest.TestCase):
         self.auth.revoke_token(token)
         self.assertFalse(self.auth.validate_token(token))
 
+    def test_concurrent_token_access(self):
+        import concurrent.futures
+        tokens = [self.auth.create_token() for _ in range(10)]
+
+        def worker(tok):
+            for _ in range(100):
+                self.auth.validate_token(tok)
+                new_t = self.auth.create_token()
+                self.auth.validate_token(new_t)
+                self.auth.revoke_token(new_t)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+            futures = [ex.submit(worker, t) for t in tokens]
+            for f in concurrent.futures.as_completed(futures):
+                f.result()
+
 
 class TestBrutalWrapper(unittest.TestCase):
     def setUp(self):

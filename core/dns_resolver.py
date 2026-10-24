@@ -17,8 +17,14 @@ def encode_dns_query(domain: str, qtype: int) -> Tuple[bytes, int]:
     qname_parts = []
     clean_domain = domain.strip().rstrip(".")
     for part in clean_domain.split("."):
+        if not part:
+            continue
         encoded_part = part.encode("idna")
+        if len(encoded_part) > 63:
+            raise ValueError(f"DNS 域名标签长度不能超过 63 字节: {part}")
         qname_parts.append(bytes([len(encoded_part)]) + encoded_part)
+    if not qname_parts:
+        raise ValueError(f"无效的域名格式: {domain}")
     qname = b"".join(qname_parts) + b"\x00"
 
     # QTYPE and QCLASS (1=IN Internet)
@@ -108,7 +114,11 @@ def query_dns_server(domain: str, server: str, qtype: int, timeout: float = 2.0)
     if not server_clean:
         return []
 
-    packet, qid = encode_dns_query(domain, qtype)
+    try:
+        packet, qid = encode_dns_query(domain, qtype)
+    except ValueError:
+        return []
+
     is_ipv6 = ":" in server_clean
     family = socket.AF_INET6 if is_ipv6 else socket.AF_INET
 
@@ -147,8 +157,8 @@ class SimpleDnsResolver:
         for server in self.servers:
             try:
                 ips = query_dns_server(domain, server, qtype, timeout=self.timeout)
-                if ips:
-                    return ips
+                # 若外部 DNS 正常响应（即便该类型记录为空 NODATA，也说明查询已得到权威/递归确认）
+                return ips
             except Exception:
                 continue
         return []

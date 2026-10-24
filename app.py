@@ -17,7 +17,7 @@ from core.sync_runner import SyncRunner
 # 基础目录与版本号 (基于年月日 CalVer)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
-APP_VERSION = "v2026.10.17"
+APP_VERSION = "v2026.10.24"
 
 
 class ThreadedWSGIServer(socketserver.ThreadingMixIn, WSGIServer):
@@ -502,11 +502,16 @@ class BrutalWebApp:
 
         # 2. 来源判定与分流回写
         static_ips = set(self.ip_mgr.get_effective_ips())
-        domain_ip_map = self.domain_mgr.get_cached_ip_to_domain_map()
+        domain_ip_map = self.domain_mgr.get_cached_ip_to_domain_map(blocking=False)
         dest_raw = valid_ip.split("/")[0]
 
         target_domain = req_domain or domain_ip_map.get(valid_ip) or domain_ip_map.get(dest_raw)
         effective_domains = [d.lower() for d in self.domain_mgr.get_effective_domains()]
+
+        # 若目标暂未匹配且不是静态清单规则，进行一次阻塞式解析防止冷缓存下域名规则被误判为手动规则
+        if not target_domain and req_source != "static" and (valid_ip not in static_ips):
+            domain_ip_map = self.domain_mgr.get_cached_ip_to_domain_map(blocking=True)
+            target_domain = domain_ip_map.get(valid_ip) or domain_ip_map.get(dest_raw)
 
         if (req_source == "domain" or target_domain) and target_domain and (target_domain.lower() in effective_domains):
             # 2.1 域名解析出来的 IP：保存到域名清单配置中，并更新内核流控
@@ -570,7 +575,7 @@ class BrutalWebApp:
         return self.json_response({"error": msg}, start_response, status="500 Internal Server Error")
 
     def api_get_static_ips(self, start_response):
-        raw = self.im_raw = self.ip_mgr.get_raw_content()
+        raw = self.ip_mgr.get_raw_content()
         ips = self.ip_mgr.get_effective_ips()
         v4_count = sum(1 for ip in ips if ":" not in ip)
         v6_count = sum(1 for ip in ips if ":" in ip)
@@ -747,7 +752,8 @@ class BrutalWebApp:
                 if not servers:
                     servers = ["8.8.8.8", "8.8.4.4"]
                 self.config["dns"]["servers"] = servers
-                self.domain_mgr.set_dns_config(servers=servers)
+                curr_timeout = float(self.config["dns"].get("timeout_seconds", 2.5))
+                self.domain_mgr.set_dns_config(servers=servers, timeout=curr_timeout)
                 self.sync_runner.set_dns_servers(servers)
             if "timeout_seconds" in dns_conf:
                 try:

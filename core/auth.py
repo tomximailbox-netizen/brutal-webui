@@ -120,25 +120,28 @@ class AuthManager:
     def create_token(self) -> str:
         token = secrets.token_hex(32)
         expire_time = time.time() + self.token_expire_seconds
-        self._tokens[token] = expire_time
-        self._cleanup_expired()
+        with self._lock:
+            self._tokens[token] = expire_time
+            self._cleanup_expired()
         return token
 
     def validate_token(self, token: str) -> bool:
         if not token:
             return False
-        self._cleanup_expired()
-        expire_time = self._tokens.get(token)
-        if not expire_time:
-            return False
-        return time.time() < expire_time
+        with self._lock:
+            self._cleanup_expired()
+            expire_time = self._tokens.get(token)
+            if not expire_time:
+                return False
+            return time.time() < expire_time
 
     def revoke_token(self, token: str):
-        if token in self._tokens:
-            del self._tokens[token]
+        with self._lock:
+            if token in self._tokens:
+                del self._tokens[token]
 
     def _cleanup_expired(self):
         now = time.time()
-        expired = [t for t, exp in self._tokens.items() if now >= exp]
+        expired = [t for t, exp in list(self._tokens.items()) if now >= exp]
         for t in expired:
             del self._tokens[t]

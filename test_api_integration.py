@@ -2,6 +2,7 @@ import io
 import json
 import os
 import sys
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -12,8 +13,12 @@ from app import BrutalWebApp
 class TestApiIntegration(unittest.TestCase):
     def setUp(self):
         self.app = BrutalWebApp()
+        self.app.sync_runner.stop_scheduler()
         self.admin_password = self.app.config.get("auth", {}).get("admin_password", "admin123")
         self.token = None
+
+    def tearDown(self):
+        self.app.sync_runner.stop_scheduler()
 
     def make_request(self, method, path, body=None, token=None, extra_headers=None):
         headers = {}
@@ -198,6 +203,10 @@ class TestApiIntegration(unittest.TestCase):
         self.assertIn("200 OK", res["status"])
 
         # 10. 触发同步
+        for _ in range(30):
+            if not self.app.sync_runner.is_running():
+                break
+            time.sleep(0.1)
         res = self.make_request("POST", "/api/sync/run", token=token)
         self.assertIn("200 OK", res["status"])
 

@@ -81,8 +81,9 @@ sleep 1
 if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
     echo "✅ 服务已成功启动并在后台运行！"
 else
-    echo "⚠️ 警告：服务未能正常启动，以下为 systemd 最新日志："
+    echo "❌ 错误：服务未能正常启动，以下为 systemd 最新日志："
     journalctl -u "${SERVICE_NAME}.service" -n 20 --no-pager || true
+    exit 1
 fi
 
 echo
